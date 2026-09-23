@@ -10,10 +10,12 @@ docker run --rm --name ming-layer-web --gpus all --ipc=host \
   -p 127.0.0.1:8765:8765 \
   -e HOME=/tmp -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
   -e PYTHONPATH=/app:/upstream \
-  -e MING_UPSTREAM_DIR=/upstream -e MING_MODEL_DIR=/model -e MING_JOBS_DIR=/jobs \
+  -e MING_UPSTREAM_DIR=/upstream -e MING_MODEL_DIR=/model \
+  -e MING_DESIGN_MODEL_DIR=/design-model -e MING_JOBS_DIR=/jobs \
   -e MING_IDLE_UNLOAD_SECONDS=900 \
   -v "$project_root/upstream:/upstream:ro" \
   -v "$project_root/model:/model:ro" \
+  -v "$project_root/design-model:/design-model:ro" \
   -v "$project_root/web:/app/web:ro" \
   -v "$project_root/jobs:/jobs" \
   -w /app \

@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Ming Layer Lab</title>
-    <link rel="stylesheet" href="/static/style.css" />
-    <script src="/static/app.js?v=2" defer></script>
+    <link rel="stylesheet" href="/static/style.css?v=3" />
+    <script src="/static/app.js?v=4" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -14,7 +14,7 @@
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
           <div>
             <strong>MING <span>LAYER LAB</span></strong>
-            <small>Flattened design → transparent layers</small>
+            <small>Generate a design → split into transparent layers</small>
           </div>
         </div>
         <div class="top-actions">
@@ -25,6 +25,29 @@
 
       <main class="workspace">
         <aside class="setup-panel panel">
+          <div class="mode-switch" role="group" aria-label="Lab mode">
+            <button type="button" class="selected" data-mode="design">Generate design</button>
+            <button type="button" data-mode="layers">Split layers</button>
+          </div>
+          <div id="design-setup">
+            <div class="panel-heading">
+              <span class="eyebrow">01 / DESIGN</span>
+              <h1>Describe your design</h1>
+              <p>Create a flattened image from a prompt, then send it into the layer workspace.</p>
+            </div>
+            <form id="design-form">
+              <label class="field-label" for="design-prompt">Prompt</label>
+              <textarea id="design-prompt" class="design-prompt" minlength="5" maxlength="5000" required placeholder="A bold editorial poster with a red ceramic vase, cream background, and the exact headline ‘FRESH IDEAS’. Keep the headline clear and centered."></textarea>
+              <p class="helper">Describe layout, palette, subject, and any lettering you want to see. Generated text may need review.</p>
+              <div class="section-header settings-heading"><div><span class="eyebrow">02 / SETTINGS</span><h2>Run settings</h2></div></div>
+              <div class="setting-row"><div><strong>Output size</strong><span>1024 is faster; 2048 adds detail.</span></div><div class="segmented" role="group" aria-label="Design resolution"><button type="button" class="selected" data-design-resolution="1024">1024</button><button type="button" data-design-resolution="2048">2048</button></div></div>
+              <div class="setting-row seed-row"><div><strong>Seed</strong><span>Reuse a seed to compare prompts.</span></div><input id="design-seed-input" type="number" min="0" max="4294967295" value="42" /></div>
+              <div class="fixed-settings">12 steps <span>·</span> CFG 1.0 <span>·</span> BF16</div>
+              <button class="generate-button" id="generate-design-button" type="submit">Generate design <span aria-hidden="true">↗</span></button>
+              <p class="run-note">Spark 2 loads one checkpoint at a time. Switching models can take several minutes.</p>
+            </form>
+          </div>
+          <div id="layer-setup" hidden>
           <div class="panel-heading">
             <span class="eyebrow">01 / INPUT</span>
             <h1>Set up a split</h1>
@@ -74,6 +97,7 @@
             <button class="generate-button" id="generate-button" type="submit">Generate layers <span aria-hidden="true">↗</span></button>
             <p class="run-note">The first run loads the model. The official 1024 sample took 15m 47s on GX10; your image may differ.</p>
           </form>
+          </div>
         </aside>
 
         <section class="preview-panel panel" aria-label="Design preview">
@@ -90,7 +114,7 @@
             </div>
           </div>
 
-          <nav class="view-tabs" aria-label="Preview mode">
+          <nav class="view-tabs" id="view-tabs" aria-label="Preview mode">
             <button type="button" class="active" data-view="input">Input</button>
             <button type="button" data-view="recomposed" disabled>Recomposed</button>
             <button type="button" data-view="layers" disabled>Layers</button>
@@ -101,8 +125,8 @@
           <div class="canvas-viewport" id="canvas-viewport">
             <div class="canvas-empty" id="canvas-empty">
               <div class="empty-stack" aria-hidden="true"><i></i><i></i><i></i></div>
-              <h3>Start with a finished design</h3>
-              <p>Upload a flattened graphic. Its layers will appear here after generation.</p>
+              <h3>Start with a design</h3>
+              <p>Generate an image from a prompt, or switch to Split layers and upload one.</p>
             </div>
             <div class="artwork-frame" id="artwork-frame" hidden>
               <img id="artwork-image" alt="Design preview" />
@@ -133,8 +157,8 @@
         <aside class="result-panel panel">
           <div class="panel-heading result-heading">
             <span class="eyebrow">04 / OUTPUT</span>
-            <h2>Layers</h2>
-            <p>Toggle, solo, inspect, and download each transparent PNG.</p>
+            <h2 id="result-title">Design</h2>
+            <p id="result-description">Generate an image, download it, or send it to layer splitting.</p>
           </div>
           <div class="job-card" id="job-card" aria-live="polite">
             <div class="job-card-top"><span class="job-indicator" id="job-indicator"></span><strong id="job-stage">No job running</strong></div>
@@ -145,10 +169,14 @@
             <button class="small-button" type="button" id="show-all">Show all</button>
             <a class="download-button" id="download-zip" href="#">Download ZIP ↓</a>
           </div>
+          <div class="design-actions" id="design-actions" hidden>
+            <a class="download-button" id="download-design" href="#" download="design.png">Download PNG ↓</a>
+            <button class="small-button" id="send-to-layers" type="button">Send to Layers →</button>
+          </div>
           <div class="result-list" id="result-list">
             <div class="result-placeholder"><span>▧</span><p>Nothing separated yet</p></div>
           </div>
-          <div class="result-tip">Transparent PNGs are movable raster layers. Lettering is not editable font text.</div>
+          <div class="result-tip" id="result-tip">Generated images and layers are raster. Lettering is not editable font text.</div>
         </aside>
       </main>
     </div>

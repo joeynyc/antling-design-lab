@@ -1,4 +1,4 @@
-"""Local, single-GPU web interface for Ming Design-Layer."""
+"""Local, single-GPU web interface for Ming Design and Design-Layer."""
 
 from __future__ import annotations
 
@@ -27,10 +27,14 @@ from PIL import Image, ImageChops, ImageOps, ImageStat, UnidentifiedImageError
 
 WEB_DIR = Path(__file__).resolve().parent
 UPSTREAM_DIR = Path(os.environ.get("MING_UPSTREAM_DIR", "/upstream"))
-MODEL_DIR = Path(os.environ.get("MING_MODEL_DIR", "/model"))
+LAYER_MODEL_DIR = Path(os.environ.get("MING_MODEL_DIR", "/model"))
+DESIGN_MODEL_DIR = Path(os.environ.get("MING_DESIGN_MODEL_DIR", "/design-model"))
 JOBS_DIR = Path(os.environ.get("MING_JOBS_DIR", "/jobs"))
-MODEL_REVISION = os.environ.get(
+LAYER_MODEL_REVISION = os.environ.get(
     "MING_MODEL_REVISION", "650448783505b103af305ce347bf60d8889e655a"
+)
+DESIGN_MODEL_REVISION = os.environ.get(
+    "MING_DESIGN_MODEL_REVISION", "16ed0bafe7491ee93c90da5825f54b52bbbc5617"
 )
 UPSTREAM_REVISION = os.environ.get(
     "MING_UPSTREAM_REVISION", "62c6072e1ff15af83f7c4963a0a1954c1424e80e"
@@ -92,6 +96,10 @@ def public_job(job: dict) -> dict:
     job_id = job["id"]
     base = f"/api/jobs/{job_id}/assets"
     result = {key: value for key, value in job.items() if key != "prompt"}
+    if job.get("kind", "layers") == "design":
+        if job["status"] == "done":
+            result["design_url"] = f"{base}/design.png"
+        return result
     result["input_url"] = f"{base}/input.png"
     if job["status"] == "done":
         result["layer_urls"] = [
@@ -115,6 +123,7 @@ class JobRuntime:
         self.model = None
         self.processor = None
         self.profile = None
+        self.model_kind: str | None = None
         self.active_id: str | None = None
         self.last_used = 0.0
 
@@ -159,6 +168,7 @@ class JobRuntime:
         self.model = None
         self.processor = None
         self.profile = None
+        self.model_kind = None
         gc.collect()
         try:
             import torch
@@ -184,7 +194,10 @@ class JobRuntime:
             with self.lock:
                 self.active_id = job_id
             try:
-                self._run_job(job_id)
+                if self.get_job(job_id).get("kind", "layers") == "design":
+                    self._run_design_job(job_id)
+                else:
+                    self._run_layer_job(job_id)
             except Exception as exc:
                 traceback.print_exc()
                 self.update(
@@ -200,16 +213,19 @@ class JobRuntime:
                 self.last_used = time.monotonic()
                 self.pending.task_done()
 
-    def _load_model(self) -> float:
-        if self.model is not None:
+    def _load_model(self, kind: str) -> float:
+        if self.model is not None and self.model_kind == kind:
             return 0.0
+        if self.model is not None:
+            self._release_model()
         started = time.monotonic()
         if str(UPSTREAM_DIR) not in sys.path:
             sys.path.insert(0, str(UPSTREAM_DIR))
         from infer import load_model_and_processor
         from inference_profile import load_checkpoint_capabilities
 
-        self.profile = load_checkpoint_capabilities(MODEL_DIR)
+        model_dir = DESIGN_MODEL_DIR if kind == "design" else LAYER_MODEL_DIR
+        self.profile = load_checkpoint_capabilities(model_dir)
         args = SimpleNamespace(
             processor=None,
             dtype="bfloat16",
@@ -218,15 +234,16 @@ class JobRuntime:
             device_map="balanced",
             num_gpus=1,
         )
-        self.model, self.processor = load_model_and_processor(MODEL_DIR, args)
+        self.model, self.processor = load_model_and_processor(model_dir, args)
+        self.model_kind = kind
         return round(time.monotonic() - started, 2)
 
-    def _run_job(self, job_id: str) -> None:
+    def _run_layer_job(self, job_id: str) -> None:
         job = self.get_job(job_id)
         job_dir = JOBS_DIR / job_id
         started = time.monotonic()
         self.update(job_id, status="loading", started_at=now_iso())
-        load_seconds = self._load_model()
+        load_seconds = self._load_model("layers")
         self.profile.validate_task(
             "layer-decompose", has_reference_image=True, num_layers=len(job["layers"])
         )
@@ -288,6 +305,58 @@ class JobRuntime:
         )
         torch.cuda.empty_cache()
 
+    def _run_design_job(self, job_id: str) -> None:
+        job = self.get_job(job_id)
+        job_dir = JOBS_DIR / job_id
+        started = time.monotonic()
+        self.update(job_id, status="loading", started_at=now_iso())
+        load_seconds = self._load_model("design")
+        self.profile.validate_task(
+            "text-to-image", has_reference_image=False, num_layers=1
+        )
+        from infer import run_generation
+        import torch
+
+        sampling = self.profile.resolve_sampling_parameters(steps=12, cfg=1.0)
+        self.update(job_id, status="running", load_seconds=load_seconds)
+        generation_started = time.monotonic()
+        with torch.inference_mode():
+            images = run_generation(
+                self.model,
+                self.processor,
+                self.profile,
+                task="text-to-image",
+                prompt=job["design_prompt"],
+                input_image=None,
+                resolution=job["resolution"],
+                sampling=sampling,
+                seed=job["seed"],
+                num_layers=1,
+                dtype=torch.bfloat16,
+            )
+        generation_seconds = round(time.monotonic() - generation_started, 2)
+        self.update(job_id, status="saving", generation_seconds=generation_seconds)
+        output = images[0]
+        output.save(job_dir / "design.png")
+        output_size = list(output.size)
+        del images, output
+        manifest = self.get_job(job_id)
+        manifest.update(
+            status="done",
+            output_size=output_size,
+            total_seconds=round(time.monotonic() - started, 2),
+            finished_at=now_iso(),
+        )
+        (job_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        self.update(
+            job_id,
+            status="done",
+            output_size=output_size,
+            total_seconds=manifest["total_seconds"],
+            finished_at=manifest["finished_at"],
+        )
+        torch.cuda.empty_cache()
+
 
 runtime = JobRuntime()
 
@@ -301,7 +370,7 @@ async def lifespan(_: FastAPI):
         runtime.stop()
 
 
-app = FastAPI(title="Ming Design Layer", lifespan=lifespan)
+app = FastAPI(title="Ming Layer Lab", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
 
@@ -315,10 +384,12 @@ def health():
     with runtime.lock:
         return {
             "model_loaded": runtime.model is not None,
+            "loaded_model": runtime.model_kind,
             "active_job": runtime.active_id,
             "queued_jobs": runtime.pending.qsize(),
             "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
-            "model_revision": MODEL_REVISION,
+            "model_revision": LAYER_MODEL_REVISION,
+            "design_model_revision": DESIGN_MODEL_REVISION,
         }
 
 
@@ -375,6 +446,7 @@ async def create_job(
     input_image.save(job_dir / "input.png")
     job = {
         "id": job_id,
+        "kind": "layers",
         "status": "queued",
         "created_at": now_iso(),
         "started_at": None,
@@ -385,9 +457,49 @@ async def create_job(
         "seed": seed,
         "steps": 12,
         "cfg": 2.0,
-        "model_revision": MODEL_REVISION,
+        "model_revision": LAYER_MODEL_REVISION,
         "upstream_revision": UPSTREAM_REVISION,
         "input_size": list(input_image.size),
+    }
+    try:
+        runtime.add_job(job)
+    except HTTPException:
+        shutil.rmtree(job_dir)
+        raise
+    return public_job(job)
+
+
+@app.post("/api/design-jobs", status_code=202)
+def create_design_job(
+    prompt: str = Form(...),
+    resolution: int = Form(1024),
+    seed: int = Form(42),
+):
+    prompt = prompt.strip()
+    if not 5 <= len(prompt) <= 5000:
+        raise HTTPException(422, "Describe the design in 5–5000 characters")
+    if resolution not in (1024, 2048):
+        raise HTTPException(422, "Design resolution must be 1024 or 2048")
+    if not 0 <= seed <= 2**32 - 1:
+        raise HTTPException(422, "Seed is out of range")
+
+    job_id = uuid.uuid4().hex
+    job_dir = JOBS_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=False)
+    job = {
+        "id": job_id,
+        "kind": "design",
+        "status": "queued",
+        "created_at": now_iso(),
+        "started_at": None,
+        "finished_at": None,
+        "design_prompt": prompt,
+        "resolution": resolution,
+        "seed": seed,
+        "steps": 12,
+        "cfg": 1.0,
+        "model_revision": DESIGN_MODEL_REVISION,
+        "upstream_revision": UPSTREAM_REVISION,
     }
     try:
         runtime.add_job(job)
@@ -405,8 +517,11 @@ def get_job(job_id: str):
 @app.get("/api/jobs/{job_id}/assets/{filename}")
 def get_asset(job_id: str, filename: str):
     job = runtime.get_job(job_id)
-    allowed = {"input.png"}
-    if job["status"] == "done":
+    if job.get("kind", "layers") == "design":
+        allowed = {"design.png", "manifest.json"} if job["status"] == "done" else set()
+    else:
+        allowed = {"input.png"}
+    if job.get("kind", "layers") == "layers" and job["status"] == "done":
         allowed.update(
             {
                 "recomposed.png",

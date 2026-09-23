@@ -8,6 +8,9 @@ const DEFAULT_LAYERS = [
 ];
 
 const state = {
+  mode: "design",
+  jobs: {design: null, layers: null},
+  designResolution: 1024,
   file: null,
   localUrl: null,
   inputSize: null,
@@ -74,6 +77,7 @@ function moveLayer(index, delta) {
 
 function setInputFile(file) {
   if (!file) return;
+  if (state.mode !== "layers") setMode("layers");
   if (["queued", "loading", "running", "saving"].includes(state.job?.status)) {
     showError("Wait for the current run to finish before changing the input.");
     return;
@@ -88,6 +92,7 @@ function setInputFile(file) {
   }
   if (state.localUrl) URL.revokeObjectURL(state.localUrl);
   state.job = null;
+  state.jobs.layers = null;
   state.layerImages = [];
   state.visible = [];
   state.file = file;
@@ -104,6 +109,7 @@ function setInputFile(file) {
     byId("metric-status").textContent = "Ready for input";
     byId("metric-time").textContent = "—";
     byId("metric-error").textContent = "—";
+    renderJob();
     renderResults();
     renderPreview();
   };
@@ -123,6 +129,7 @@ function secondsLabel(value) {
 }
 
 function setView(view) {
+  if (state.mode === "design") return;
   if (view !== "input" && state.job?.status !== "done") return;
   state.view = view;
   renderPreview();
@@ -131,31 +138,43 @@ function setView(view) {
 function renderPreview() {
   const job = state.job;
   const finished = job?.status === "done";
+  const designMode = state.mode === "design";
+  byId("preview-title").textContent = designMode ? "Design canvas" : "Layer canvas";
+  byId("view-tabs").hidden = designMode;
   document.querySelectorAll(".view-tabs button").forEach((tab) => {
     tab.disabled = tab.dataset.view !== "input" && !finished;
     tab.classList.toggle("active", tab.dataset.view === state.view);
   });
-  const source = state.localUrl || job?.input_url;
+  const source = designMode ? job?.design_url : state.localUrl || job?.input_url;
   const empty = !source;
   byId("canvas-empty").hidden = !empty;
   byId("artwork-frame").hidden = empty;
-  if (empty) return;
+  if (empty) {
+    byId("split-control").hidden = true;
+    byId("canvas-caption").textContent = designMode ? "Generated design will appear here" : "RGBA raster layers · text remains pixels";
+    byId("metric-size").textContent = "—";
+    return;
+  }
 
   const frame = byId("artwork-frame");
   const image = byId("artwork-image");
   const canvas = byId("layer-canvas");
   const split = byId("split-stack");
-  const outputSize = finished ? job.metrics.output_size : state.inputSize || job.input_size;
+  const outputSize = designMode ? job?.output_size : finished ? job.metrics.output_size : state.inputSize || job?.input_size;
   const width = outputSize?.[0] || 1024;
   const height = outputSize?.[1] || 1024;
   frame.style.aspectRatio = `${width} / ${height}`;
   frame.style.width = state.zoom === "fit" ? `min(100%, ${width}px)` : `${width * Number(state.zoom)}px`;
-  image.hidden = state.view === "layers" || state.view === "split";
-  canvas.hidden = state.view !== "layers";
-  split.hidden = state.view !== "split";
-  byId("split-control").hidden = state.view !== "split";
+  image.hidden = !designMode && (state.view === "layers" || state.view === "split");
+  canvas.hidden = designMode || state.view !== "layers";
+  split.hidden = designMode || state.view !== "split";
+  byId("split-control").hidden = designMode || state.view !== "split";
 
-  if (state.view === "input") {
+  if (designMode) {
+    image.src = source;
+    image.alt = "Generated design";
+    byId("canvas-caption").textContent = "Generated design · ready to download or split";
+  } else if (state.view === "input") {
     image.src = source;
     image.alt = "Flattened input design";
     byId("canvas-caption").textContent = "Original flattened design";
@@ -212,10 +231,21 @@ function renderResults() {
   const list = byId("result-list");
   list.replaceChildren();
   const job = state.job;
-  byId("result-actions").hidden = job?.status !== "done";
+  byId("result-actions").hidden = state.mode !== "layers" || job?.status !== "done";
+  byId("design-actions").hidden = state.mode !== "design" || job?.status !== "done";
+  if (state.mode === "design" && job?.status === "done") {
+    byId("download-design").href = job.design_url;
+    const card = makeElement("div", "design-result");
+    const thumbnail = makeElement("img");
+    thumbnail.src = job.design_url;
+    thumbnail.alt = "Generated design thumbnail";
+    card.append(thumbnail, makeElement("p", "", job.design_prompt));
+    list.append(card);
+    return;
+  }
   if (job?.status !== "done") {
     const placeholder = makeElement("div", "result-placeholder");
-    placeholder.append(makeElement("span", "", "▧"), makeElement("p", "", "Nothing separated yet"));
+    placeholder.append(makeElement("span", "", "▧"), makeElement("p", "", state.mode === "design" ? "No design generated yet" : "Nothing separated yet"));
     list.append(placeholder);
     return;
   }
@@ -264,22 +294,32 @@ function renderJob() {
   const job = state.job;
   const card = byId("job-card");
   card.className = "job-card";
-  if (!job) return;
+  if (!job) {
+    byId("job-stage").textContent = "No job running";
+    byId("job-message").textContent = state.mode === "design" ? "Your generated design will appear here." : "Your generated layers will appear here.";
+    byId("job-clock").textContent = "";
+    byId("metric-status").textContent = "Ready";
+    byId("metric-time").textContent = "—";
+    byId("metric-error").textContent = "—";
+    byId("generate-button").disabled = false;
+    byId("generate-design-button").disabled = false;
+    return;
+  }
   card.classList.add(job.status);
   const names = {
     queued: "Queued for Spark 2",
     loading: "Loading model",
-    running: "Generating layers",
-    saving: "Saving PNGs",
-    done: "Layers ready",
+    running: state.mode === "design" ? "Generating design" : "Generating layers",
+    saving: state.mode === "design" ? "Saving design" : "Saving PNGs",
+    done: state.mode === "design" ? "Design ready" : "Layers ready",
     error: "Run failed",
   };
   const messages = {
-    queued: "Your design is waiting for the single GPU worker.",
+    queued: "Your job is waiting for the single GPU worker.",
     loading: "The checkpoint is loading into GPU memory. This can take several minutes.",
     running: "The model is working. The timer shows elapsed time; step progress is not available here.",
-    saving: "Generation finished. Writing layers, comparison, and ZIP.",
-    done: "Inspect individual layers and compare the recomposition with your input.",
+    saving: state.mode === "design" ? "Generation finished. Saving the PNG." : "Generation finished. Writing layers, comparison, and ZIP.",
+    done: state.mode === "design" ? "Download the design or send it directly to layer splitting." : "Inspect individual layers and compare the recomposition with your input.",
     error: job.error || "Something went wrong. Your input and layer plan are still here.",
   };
   byId("job-stage").textContent = names[job.status] || job.status;
@@ -287,7 +327,9 @@ function renderJob() {
   byId("metric-status").textContent = names[job.status] || job.status;
   byId("metric-time").textContent = secondsLabel(job.generation_seconds);
   byId("metric-error").textContent = job.metrics ? `${job.metrics.rgb_mae_0_to_255} / 255` : "—";
-  byId("generate-button").disabled = ["queued", "loading", "running", "saving"].includes(job.status);
+  const active = ["queued", "loading", "running", "saving"].includes(job.status);
+  byId("generate-button").disabled = state.mode === "layers" && active;
+  byId("generate-design-button").disabled = state.mode === "design" && active;
   updateClock();
 }
 
@@ -310,16 +352,23 @@ function showError(message) {
 
 async function pollJob() {
   if (!state.job) return;
+  const mode = state.mode;
+  const jobId = state.job.id;
   try {
-    const response = await fetch(`/api/jobs/${state.job.id}`);
+    const response = await fetch(`/api/jobs/${jobId}`);
     if (!response.ok) throw new Error("Could not check the job status.");
-    state.job = await response.json();
+    const updated = await response.json();
+    state.jobs[mode] = updated;
+    if (mode !== state.mode || state.job?.id !== jobId) return;
+    state.job = updated;
     renderJob();
     if (state.job.status === "done") {
       clearInterval(state.pollHandle);
       state.pollHandle = null;
-      await loadLayerImages(state.job.layer_urls);
-      state.view = "recomposed";
+      if (mode === "layers") {
+        await loadLayerImages(state.job.layer_urls);
+        state.view = "recomposed";
+      }
       renderResults();
       renderPreview();
     } else if (state.job.status === "error") {
@@ -362,6 +411,7 @@ async function submitJob(event) {
     const body = await response.json();
     if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "The job could not start.");
     state.job = body;
+    state.jobs.layers = body;
     state.visible = [];
     state.layerImages = [];
     state.view = "input";
@@ -375,6 +425,72 @@ async function submitJob(event) {
   }
 }
 
+async function submitDesignJob(event) {
+  event.preventDefault();
+  const prompt = byId("design-prompt").value.trim();
+  if (prompt.length < 5 || prompt.length > 5000) { showError("Describe the design in 5–5000 characters."); return; }
+  const seed = Number(byId("design-seed-input").value);
+  if (!Number.isInteger(seed) || seed < 0 || seed > 4294967295) { showError("Choose a whole-number seed from 0 to 4294967295."); return; }
+  const data = new FormData();
+  data.append("prompt", prompt);
+  data.append("resolution", String(state.designResolution));
+  data.append("seed", String(seed));
+  byId("generate-design-button").disabled = true;
+  try {
+    const response = await fetch("/api/design-jobs", {method: "POST", body: data});
+    const body = await response.json();
+    if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "The design job could not start.");
+    state.job = body;
+    state.jobs.design = body;
+    renderJob();
+    renderResults();
+    renderPreview();
+    startPolling();
+  } catch (error) {
+    byId("generate-design-button").disabled = false;
+    showError(error.message);
+  }
+}
+
+function setMode(mode) {
+  if (mode !== "design" && mode !== "layers") return;
+  state.mode = mode;
+  state.job = state.jobs[mode];
+  if (state.pollHandle) clearInterval(state.pollHandle);
+  state.pollHandle = null;
+  document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("selected", button.dataset.mode === mode));
+  byId("design-setup").hidden = mode !== "design";
+  byId("layer-setup").hidden = mode !== "layers";
+  byId("result-title").textContent = mode === "design" ? "Design" : "Layers";
+  byId("result-description").textContent = mode === "design" ? "Generate an image, download it, or send it to layer splitting." : "Toggle, solo, inspect, and download each transparent PNG.";
+  byId("metric-error").parentElement.hidden = mode === "design";
+  byId("metrics-strip").classList.toggle("design-metrics", mode === "design");
+  if (mode === "layers" && state.job?.status === "done" && !state.layerImages.length) {
+    loadLayerImages(state.job.layer_urls).then(() => { state.view = "recomposed"; renderResults(); renderPreview(); }).catch(() => showError("Could not load layer previews."));
+  }
+  renderJob();
+  renderResults();
+  renderPreview();
+  if (state.job && ["queued", "loading", "running", "saving"].includes(state.job.status)) startPolling();
+}
+
+async function sendToLayers() {
+  const job = state.jobs.design;
+  if (job?.status !== "done") return;
+  const button = byId("send-to-layers");
+  button.disabled = true;
+  try {
+    const response = await fetch(job.design_url);
+    if (!response.ok) throw new Error("Could not load the generated design.");
+    const file = new File([await response.blob()], `ming-design-${job.id.slice(0, 8)}.png`, {type: "image/png"});
+    setMode("layers");
+    state.layers = [...DEFAULT_LAYERS];
+    renderPlan();
+    setInputFile(file);
+  } catch (error) { showError(error.message); }
+  finally { button.disabled = false; }
+}
+
 async function updateHealth() {
   const status = byId("server-status");
   try {
@@ -382,7 +498,7 @@ async function updateHealth() {
     if (!response.ok) throw new Error("offline");
     const body = await response.json();
     status.className = `server-status ${body.active_job ? "busy" : "online"}`;
-    status.lastChild.textContent = body.active_job ? "GPU working" : body.model_loaded ? "Model ready" : "GPU available";
+    status.lastChild.textContent = body.active_job ? "GPU working" : body.model_loaded ? `${body.loaded_model === "design" ? "Design" : "Layer"} ready` : "GPU available";
     byId("release-gpu").disabled = !body.model_loaded || Boolean(body.active_job) || body.queued_jobs > 0;
   } catch {
     status.className = "server-status offline";
@@ -397,40 +513,51 @@ async function restoreRecentJob() {
     if (!response.ok) return;
     const jobs = await response.json();
     if (!jobs.length) return;
-    state.job = jobs[0];
-    state.inputSize = state.job.input_size;
-    state.layers = [...state.job.layers];
-    state.resolution = state.job.resolution;
-    byId("seed-input").value = String(state.job.seed);
-    document.querySelectorAll("[data-resolution]").forEach((button) => {
-      button.classList.toggle("selected", Number(button.dataset.resolution) === state.resolution);
-    });
-    renderPlan();
-    byId("input-thumb").src = state.job.input_url;
-    byId("input-name").textContent = "Previous input";
-    byId("input-dimensions").textContent = displaySize(state.job.input_size);
-    byId("input-summary").hidden = false;
-    byId("upload-zone").hidden = true;
-    renderJob();
-    if (state.job.status === "done") {
-      await loadLayerImages(state.job.layer_urls);
+    state.jobs.design = jobs.find((job) => job.kind === "design") || null;
+    state.jobs.layers = jobs.find((job) => (job.kind || "layers") === "layers") || null;
+    const latest = jobs[0];
+    const mode = latest.kind === "design" ? "design" : "layers";
+    const layerJob = state.jobs.layers;
+    if (layerJob) {
+      state.inputSize = layerJob.input_size;
+      state.layers = [...layerJob.layers];
+      state.resolution = layerJob.resolution;
+      byId("seed-input").value = String(layerJob.seed);
+      document.querySelectorAll("[data-resolution]").forEach((button) => button.classList.toggle("selected", Number(button.dataset.resolution) === state.resolution));
+      renderPlan();
+      byId("input-thumb").src = layerJob.input_url;
+      byId("input-name").textContent = "Previous input";
+      byId("input-dimensions").textContent = displaySize(layerJob.input_size);
+      byId("input-summary").hidden = false;
+      byId("upload-zone").hidden = true;
+      const inputResponse = await fetch(layerJob.input_url);
+      if (inputResponse.ok) state.file = new File([await inputResponse.blob()], "previous-input.png", {type: "image/png"});
+    }
+    const designJob = state.jobs.design;
+    if (designJob) {
+      byId("design-prompt").value = designJob.design_prompt;
+      byId("design-seed-input").value = String(designJob.seed);
+      state.designResolution = designJob.resolution;
+      document.querySelectorAll("[data-design-resolution]").forEach((button) => button.classList.toggle("selected", Number(button.dataset.designResolution) === state.designResolution));
+    }
+    if (layerJob?.status === "done") {
+      await loadLayerImages(layerJob.layer_urls);
       state.view = "recomposed";
-      renderResults();
-      renderPreview();
-    } else if (["queued", "loading", "running", "saving"].includes(state.job.status)) {
-      startPolling();
-      renderPreview();
     }
-    const inputResponse = await fetch(state.job.input_url);
-    if (inputResponse.ok) {
-      state.file = new File([await inputResponse.blob()], "previous-input.png", {type: "image/png"});
-    }
+    setMode(mode);
   } catch {
     // The uploader remains usable if history is unavailable.
   }
 }
 
 function attachEvents() {
+  document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => setMode(button.dataset.mode)));
+  document.querySelectorAll("[data-design-resolution]").forEach((button) => button.addEventListener("click", () => {
+    state.designResolution = Number(button.dataset.designResolution);
+    document.querySelectorAll("[data-design-resolution]").forEach((item) => item.classList.toggle("selected", item === button));
+  }));
+  byId("design-form").addEventListener("submit", submitDesignJob);
+  byId("send-to-layers").addEventListener("click", sendToLayers);
   byId("image-input").addEventListener("change", (event) => setInputFile(event.target.files[0]));
   byId("change-image").addEventListener("click", () => byId("image-input").click());
   const dropZone = byId("upload-zone");
