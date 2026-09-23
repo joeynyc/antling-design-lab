@@ -23,11 +23,11 @@ Open <http://127.0.0.1:8765/>. Leave the tunnel running while using the tool. St
 
 In **Generate design**, enter a prompt, choose 1024 or 2048 output size and a seed, then generate. Download the PNG or choose **Send to Layers** to transfer it directly into the split workspace.
 
-In **Split layers**, upload a PNG, JPEG, or WebP design (20 MB and 16 megapixels maximum), or use the transferred design. Write 2–8 layer descriptions in **front-to-back** order, with the background last. Name text exactly where possible. Choose 512 or 1024 working size and a seed, then generate. Only one inference job runs at once; up to three can wait in the queue. Loading or switching checkpoints takes several minutes. The published Layer sample at 1024 took about 16 minutes end to end on GX10; other images may differ.
+In **Split layers**, upload a PNG, JPEG, or WebP design (20 MB and 16 megapixels maximum), or use the transferred design. Write 2–8 layer descriptions in **front-to-back** order, with the background last. Name text exactly where possible. Choose 512 or 1024 working size and a seed, then generate. Only one inference job runs at once; up to three can wait in the queue. A cold checkpoint load still takes several minutes. The published Layer sample at 1024 took about 16 minutes end to end on GX10; other images may differ.
 
 After generation, inspect the recomposed image, toggle or solo layers, compare input and output with the split view, inspect the amplified difference, and download individual RGBA PNGs or a ZIP bundle. The RGB error is a pixel difference against the input, not an editing-quality score. Text remains raster pixels.
 
-Completed jobs persist under `jobs/` on Spark 2 and can be reopened or rerun after a server restart. The active model stays loaded between nearby jobs of the same type and unloads after 15 idle minutes. Switching job types unloads the prior model before loading the next. **Release GPU** unloads it sooner when no job is running or queued.
+Completed jobs persist under `jobs/` on Spark 2 and can be reopened or rerun after a server restart. For 1024 px Design and 512 px Layers, the tool keeps both checkpoints loaded when Spark 2 has enough available memory; switching between them then skips the load. It requires at least 55 GiB available before loading the second model and retains both only while at least 14 GiB is available before a job. A 2048 px Design or 1024 px Layers job discards the inactive model first. The cache unloads after 15 idle minutes; **Release GPU** unloads it sooner when no job is running or queued. See the [measured speed tests](performance.md).
 
 ## Verified run
 

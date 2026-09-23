@@ -9,10 +9,14 @@ docker run --rm --name ming-layer-web --gpus all --ipc=host \
   --user "$(id -u):$(id -g)" \
   -p 127.0.0.1:8765:8765 \
   -e HOME=/tmp -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
+  -e HF_ENABLE_PARALLEL_LOADING="${MING_PARALLEL_LOADING:-false}" \
+  -e HF_PARALLEL_LOADING_WORKERS="${MING_PARALLEL_WORKERS:-4}" \
   -e PYTHONPATH=/app:/upstream \
   -e MING_UPSTREAM_DIR=/upstream -e MING_MODEL_DIR=/model \
   -e MING_DESIGN_MODEL_DIR=/design-model -e MING_JOBS_DIR=/jobs \
-  -e MING_IDLE_UNLOAD_SECONDS=900 \
+  -e MING_IDLE_UNLOAD_SECONDS="${MING_IDLE_UNLOAD_SECONDS:-900}" \
+  -e MING_ATTENTION_IMPLEMENTATION="${MING_ATTENTION_IMPLEMENTATION:-eager}" \
+  -e MING_DUAL_MODEL_CACHE="${MING_DUAL_MODEL_CACHE:-true}" \
   -v "$project_root/upstream:/upstream:ro" \
   -v "$project_root/model:/model:ro" \
   -v "$project_root/design-model:/design-model:ro" \

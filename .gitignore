@@ -34,3 +34,4 @@ download.log
 upstream/
 .cache/
 jobs/
+.context/

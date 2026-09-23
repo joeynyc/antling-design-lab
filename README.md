@@ -8,7 +8,7 @@ The [official six-layer sample](docs/gx10-smoke.md) completed on a DGX Spark GX1
 
 An independent design test is still needed to judge how well the model handles real editing work.
 
-The two checkpoints can [coexist in memory at smaller tested resolutions](docs/gx10-coexist.md), but the web worker queues jobs and loads only the needed checkpoint to leave headroom for larger runs.
+The web worker queues one GPU job at a time and [caches both checkpoints for the tested 1024 px Design and 512 px Layers workflow](docs/performance.md). Larger resolutions or low available memory cause it to discard the inactive checkpoint before generating.
 
 Generated layers are raster images. Text within them remains pixels rather than editable font text.
 

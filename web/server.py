@@ -40,6 +40,10 @@ UPSTREAM_REVISION = os.environ.get(
     "MING_UPSTREAM_REVISION", "62c6072e1ff15af83f7c4963a0a1954c1424e80e"
 )
 IDLE_UNLOAD_SECONDS = int(os.environ.get("MING_IDLE_UNLOAD_SECONDS", "900"))
+ATTENTION_IMPLEMENTATION = os.environ.get("MING_ATTENTION_IMPLEMENTATION", "eager")
+DUAL_MODEL_CACHE = os.environ.get("MING_DUAL_MODEL_CACHE", "true").lower() == "true"
+MIN_MEMORY_TO_ADD_SECOND_GIB = 55
+MIN_MEMORY_TO_RUN_DUAL_GIB = 14
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_PIXELS = 16_000_000
 MAX_PENDING_JOBS = 3
@@ -48,6 +52,13 @@ JOB_ID_PATTERN = re.compile(r"[a-f0-9]{32}\Z")
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def available_memory_gib() -> float:
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if line.startswith("MemAvailable:"):
+            return int(line.split()[1]) / (1024 * 1024)
+    raise RuntimeError("Could not read available system memory")
 
 
 def make_prompt(layers: list[str]) -> str:
@@ -124,6 +135,7 @@ class JobRuntime:
         self.processor = None
         self.profile = None
         self.model_kind: str | None = None
+        self.model_cache: dict[str, tuple] = {}
         self.active_id: str | None = None
         self.last_used = 0.0
 
@@ -165,6 +177,7 @@ class JobRuntime:
             self.jobs[job_id].update(values)
 
     def _release_model(self) -> None:
+        self.model_cache.clear()
         self.model = None
         self.processor = None
         self.profile = None
@@ -177,6 +190,20 @@ class JobRuntime:
         except Exception:
             pass
         self.unload_requested.clear()
+
+    def _drop_other_model(self, keep_kind: str) -> None:
+        for kind in list(self.model_cache):
+            if kind != keep_kind:
+                del self.model_cache[kind]
+        if self.model_kind != keep_kind:
+            self.model = None
+            self.processor = None
+            self.profile = None
+            self.model_kind = None
+        gc.collect()
+        import torch
+
+        torch.cuda.empty_cache()
 
     def _work_loop(self) -> None:
         while not self.stopping.is_set():
@@ -213,11 +240,33 @@ class JobRuntime:
                 self.last_used = time.monotonic()
                 self.pending.task_done()
 
-    def _load_model(self, kind: str) -> float:
+    def _load_model(self, kind: str, resolution: int) -> float:
+        use_dual_cache = DUAL_MODEL_CACHE and (
+            (kind == "design" and resolution == 1024)
+            or (kind == "layers" and resolution == 512)
+        )
+        if use_dual_cache and len(self.model_cache) > 1 and (
+            available_memory_gib() < MIN_MEMORY_TO_RUN_DUAL_GIB
+        ):
+            self._drop_other_model(kind)
+        if not use_dual_cache and any(
+            cached_kind != kind for cached_kind in self.model_cache
+        ):
+            self._drop_other_model(kind)
         if self.model is not None and self.model_kind == kind:
             return 0.0
-        if self.model is not None:
+        if kind in self.model_cache:
+            self.model, self.processor, self.profile = self.model_cache[kind]
+            self.model_kind = kind
+            return 0.0
+        if self.model is not None and (
+            not use_dual_cache or available_memory_gib() < MIN_MEMORY_TO_ADD_SECOND_GIB
+        ):
             self._release_model()
+        elif self.model is not None:
+            self.model_cache[self.model_kind] = (
+                self.model, self.processor, self.profile
+            )
         started = time.monotonic()
         if str(UPSTREAM_DIR) not in sys.path:
             sys.path.insert(0, str(UPSTREAM_DIR))
@@ -229,13 +278,18 @@ class JobRuntime:
         args = SimpleNamespace(
             processor=None,
             dtype="bfloat16",
-            attn_implementation="eager",
+            attn_implementation=ATTENTION_IMPLEMENTATION,
             device="cuda:0",
             device_map="balanced",
             num_gpus=1,
         )
         self.model, self.processor = load_model_and_processor(model_dir, args)
         self.model_kind = kind
+        self.model_cache[kind] = (self.model, self.processor, self.profile)
+        if use_dual_cache and len(self.model_cache) > 1 and (
+            available_memory_gib() < MIN_MEMORY_TO_RUN_DUAL_GIB
+        ):
+            self._drop_other_model(kind)
         return round(time.monotonic() - started, 2)
 
     def _run_layer_job(self, job_id: str) -> None:
@@ -243,14 +297,14 @@ class JobRuntime:
         job_dir = JOBS_DIR / job_id
         started = time.monotonic()
         self.update(job_id, status="loading", started_at=now_iso())
-        load_seconds = self._load_model("layers")
+        load_seconds = self._load_model("layers", job["resolution"])
         self.profile.validate_task(
             "layer-decompose", has_reference_image=True, num_layers=len(job["layers"])
         )
         from infer import run_generation
         import torch
 
-        sampling = self.profile.resolve_sampling_parameters(steps=12, cfg=2.0)
+        sampling = self.profile.resolve_sampling_parameters(steps=job["steps"], cfg=2.0)
         self.update(job_id, status="running", load_seconds=load_seconds)
         generation_started = time.monotonic()
         with torch.inference_mode():
@@ -310,14 +364,14 @@ class JobRuntime:
         job_dir = JOBS_DIR / job_id
         started = time.monotonic()
         self.update(job_id, status="loading", started_at=now_iso())
-        load_seconds = self._load_model("design")
+        load_seconds = self._load_model("design", job["resolution"])
         self.profile.validate_task(
             "text-to-image", has_reference_image=False, num_layers=1
         )
         from infer import run_generation
         import torch
 
-        sampling = self.profile.resolve_sampling_parameters(steps=12, cfg=1.0)
+        sampling = self.profile.resolve_sampling_parameters(steps=job["steps"], cfg=1.0)
         self.update(job_id, status="running", load_seconds=load_seconds)
         generation_started = time.monotonic()
         with torch.inference_mode():
@@ -385,11 +439,16 @@ def health():
         return {
             "model_loaded": runtime.model is not None,
             "loaded_model": runtime.model_kind,
+            "loaded_models": sorted(runtime.model_cache),
+            "dual_model_cache": DUAL_MODEL_CACHE,
+            "available_memory_gib": round(available_memory_gib(), 2),
             "active_job": runtime.active_id,
             "queued_jobs": runtime.pending.qsize(),
             "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
             "model_revision": LAYER_MODEL_REVISION,
             "design_model_revision": DESIGN_MODEL_REVISION,
+            "attention_implementation": ATTENTION_IMPLEMENTATION,
+            "parallel_loading": os.environ.get("HF_ENABLE_PARALLEL_LOADING", "false"),
         }
 
 
@@ -406,6 +465,7 @@ async def create_job(
     layers: str = Form(...),
     resolution: int = Form(1024),
     seed: int = Form(42),
+    steps: int = Form(12),
 ):
     try:
         layer_descriptions = json.loads(layers)
@@ -423,6 +483,8 @@ async def create_job(
         raise HTTPException(422, "Resolution must be 512 or 1024")
     if not 0 <= seed <= 2**32 - 1:
         raise HTTPException(422, "Seed is out of range")
+    if steps not in (8, 12):
+        raise HTTPException(422, "Steps must be 8 or 12")
 
     data = await image.read(MAX_UPLOAD_BYTES + 1)
     await image.close()
@@ -455,7 +517,7 @@ async def create_job(
         "prompt": make_prompt(layer_descriptions),
         "resolution": resolution,
         "seed": seed,
-        "steps": 12,
+        "steps": steps,
         "cfg": 2.0,
         "model_revision": LAYER_MODEL_REVISION,
         "upstream_revision": UPSTREAM_REVISION,
@@ -474,6 +536,7 @@ def create_design_job(
     prompt: str = Form(...),
     resolution: int = Form(1024),
     seed: int = Form(42),
+    steps: int = Form(12),
 ):
     prompt = prompt.strip()
     if not 5 <= len(prompt) <= 5000:
@@ -482,6 +545,8 @@ def create_design_job(
         raise HTTPException(422, "Design resolution must be 1024 or 2048")
     if not 0 <= seed <= 2**32 - 1:
         raise HTTPException(422, "Seed is out of range")
+    if steps not in (8, 12):
+        raise HTTPException(422, "Steps must be 8 or 12")
 
     job_id = uuid.uuid4().hex
     job_dir = JOBS_DIR / job_id
@@ -496,7 +561,7 @@ def create_design_job(
         "design_prompt": prompt,
         "resolution": resolution,
         "seed": seed,
-        "steps": 12,
+        "steps": steps,
         "cfg": 1.0,
         "model_revision": DESIGN_MODEL_REVISION,
         "upstream_revision": UPSTREAM_REVISION,
