@@ -1,0 +1,30 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+.pytest_cache/
+node_modules/
+dist/
+build/
+.next/
+
+# Local inputs, results, recordings, and checkpoints
+work/
+private/
+data/
+inputs/
+outputs/
+results/
+recordings/
+checkpoints/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
+
+# Logs and archives
+*.log
+*.zip
