@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import gc
 import io
 import json
@@ -71,6 +73,45 @@ def make_prompt(layers: list[str]) -> str:
         f"Layer {index}: {description}"
         for index, description in enumerate(layers, start=1)
     )
+
+
+def parse_skill_layers(prompt: str) -> list[str]:
+    """Read the two layer-plan formats used by inclusionAI's agent skills."""
+    numbered_lines = re.findall(
+        r"^\s*Layer\s+(\d+)(?:\s*\(([^)]*)\))?\s*:\s*(.+?)\s*$",
+        prompt,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    if numbered_lines:
+        numbers = [int(number) for number, _, _ in numbered_lines]
+        if numbers != list(range(1, len(numbers) + 1)):
+            raise HTTPException(422, "Layer numbers must start at 1 and be consecutive")
+        declared = re.search(r"Number of layers:\s*(\d+)", prompt, re.IGNORECASE)
+        if declared and int(declared.group(1)) != len(numbered_lines):
+            raise HTTPException(422, "Declared layer count differs from the layer plan")
+        return [
+            f"{role.strip()}: {description.strip()}" if role else description.strip()
+            for _, role, description in numbered_lines
+        ]
+
+    match = re.match(
+        r"^\s*(\d+)\s+layers?\s*:\s*(.+)$", prompt, re.IGNORECASE | re.DOTALL
+    )
+    if not match:
+        raise HTTPException(
+            422, "Use numbered Layer lines or a compact '4 layers: 1 ..., 2 ...' plan"
+        )
+    expected = int(match.group(1))
+    chunks = re.split(r"[,;]\s*(?=\d+\s)", match.group(2).strip())
+    parsed = [
+        re.match(r"^\s*(\d+)\s*(?:[.):\-]\s*)?(.+?)\s*$", chunk, re.DOTALL)
+        for chunk in chunks
+    ]
+    if any(item is None for item in parsed) or [
+        int(item.group(1)) for item in parsed
+    ] != list(range(1, expected + 1)):
+        raise HTTPException(422, "Compact layer plan must number every layer in order")
+    return [item.group(2).strip() for item in parsed]
 
 
 def compare_layers(input_path: Path, layer_paths: list[Path], output_dir: Path) -> dict:
@@ -572,6 +613,113 @@ def create_design_job(
         shutil.rmtree(job_dir)
         raise
     return public_job(job)
+
+
+async def wait_for_skill_job(job_id: str) -> dict:
+    """Return a finished queued job while leaving the GPU worker free to run it."""
+    deadline = time.monotonic() + 1800
+    while time.monotonic() < deadline:
+        job = runtime.get_job(job_id)
+        if job["status"] == "done":
+            return job
+        if job["status"] == "error":
+            raise HTTPException(
+                422, f"Ming job failed: {job.get('error', 'unknown error')}"
+            )
+        await asyncio.sleep(0.5)
+    raise HTTPException(504, f"Ming job {job_id} did not finish in 30 minutes")
+
+
+@app.post("/v1/images/generations")
+async def skill_generate_design(payload: dict):
+    """OpenAI-shaped local response for inclusionAI's ling-ui-design helper."""
+    model = str(payload.get("model", "ming-image-0.1-design")).lower()
+    if model not in {"ming-image-0.1-design", "inclusionai/ming-image-0.1-design"}:
+        raise HTTPException(422, "This local endpoint serves Ming-Image-0.1-Design only")
+    size = str(payload.get("size", "1024")).lower()
+    if size not in {"1024", "1k", "2048", "2k", "auto"}:
+        raise HTTPException(422, "Design size must be 1024 or 2048")
+    resolution = 2048 if size in {"2048", "2k"} else 1024
+    output_format = str(payload.get("output_format", "png")).lower()
+    if output_format not in {"png", "jpeg", "jpg", "webp"}:
+        raise HTTPException(422, "Output format must be png, jpeg, or webp")
+    try:
+        seed = int(payload.get("seed", 42))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(422, "Seed must be an integer") from exc
+    created = create_design_job(
+        prompt=str(payload.get("prompt", "")), resolution=resolution, seed=seed, steps=12
+    )
+    job = await wait_for_skill_job(created["id"])
+    with Image.open(JOBS_DIR / job["id"] / "design.png") as image:
+        buffer = io.BytesIO()
+        if output_format in {"jpeg", "jpg"}:
+            image.convert("RGB").save(buffer, format="JPEG", quality=95)
+        elif output_format == "webp":
+            image.save(buffer, format="WEBP", quality=95)
+        else:
+            image.save(buffer, format="PNG")
+    return {
+        "data": [{"b64_json": base64.b64encode(buffer.getvalue()).decode("ascii")}],
+        "job_id": job["id"],
+    }
+
+
+@app.post("/v1/images/edits")
+async def skill_decompose_image(
+    image: UploadFile = File(...),
+    prompt: str = Form(...),
+    model: str = Form("ming-image-0.1-design-layer"),
+    size: str = Form("auto"),
+    seed: int = Form(42),
+    num_inference_steps: int = Form(12),
+    num_layers: int | None = Form(None),
+):
+    """Accept the multipart layer requests sent by both inclusionAI skills."""
+    if model.lower() not in {
+        "ming-image-0.1-design-layer",
+        "inclusionai/ming-image-0.1-design-layer",
+    }:
+        raise HTTPException(
+            422, "This local endpoint serves Ming-Image-0.1-Design-Layer only"
+        )
+    resolution_map = {
+        "auto": 512,
+        "512": 512,
+        "512x512": 512,
+        "1k": 1024,
+        "1024": 1024,
+        "1024x1024": 1024,
+    }
+    if size.lower() not in resolution_map:
+        raise HTTPException(422, "Layer size must be auto, 512, or 1k")
+    if num_inference_steps not in (12, 14):
+        raise HTTPException(422, "This local workflow uses 12 inference steps")
+    layers = parse_skill_layers(prompt)
+    if num_layers is not None and num_layers != len(layers):
+        raise HTTPException(422, "num_layers differs from the numbered layer plan")
+    created = await create_job(
+        image=image,
+        layers=json.dumps(layers),
+        resolution=resolution_map[size.lower()],
+        seed=seed,
+        steps=12,
+    )
+    job = await wait_for_skill_job(created["id"])
+    return {
+        "data": [
+            {
+                "b64_json": base64.b64encode(
+                    (JOBS_DIR / job["id"] / f"layer_{index:02d}.png").read_bytes()
+                ).decode("ascii")
+            }
+            for index in range(1, len(layers) + 1)
+        ],
+        "job_id": job["id"],
+        "actual_resolution": job["resolution"],
+        "actual_steps": 12,
+        "prompt_enhancement": False,
+    }
 
 
 @app.get("/api/jobs/{job_id}")
