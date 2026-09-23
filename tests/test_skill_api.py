@@ -56,6 +56,28 @@ class SkillApiTests(unittest.TestCase):
             raw = base64.b64decode(response.json()["data"][0]["b64_json"])
             self.assertTrue(raw.startswith(b"\xff\xd8"))
 
+    def test_codex_prompt_keeps_original_visible_and_structured_input_private(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch.object(server, "JOBS_DIR", Path(directory)),
+                patch.object(server.runtime, "add_job") as add_job,
+            ):
+                response = TestClient(server.app).post(
+                    "/api/design-jobs",
+                    data={
+                        "prompt": '{"canvas_settings": {}, "layers": []}',
+                        "source_prompt": "A local AI landing page",
+                        "enhancement": "codex",
+                        "resolution": "2048",
+                    },
+                )
+            self.assertEqual(response.status_code, 202)
+            self.assertEqual(response.json()["design_prompt"], "A local AI landing page")
+            self.assertNotIn("generation_prompt", response.json())
+            queued = add_job.call_args.args[0]
+            self.assertEqual(queued["generation_prompt"], '{"canvas_settings": {}, "layers": []}')
+            self.assertEqual(queued["resolution"], 2048)
+
     def test_edit_returns_ordered_rgba_layers(self):
         with tempfile.TemporaryDirectory() as directory:
             job_id = "b" * 32

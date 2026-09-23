@@ -21,7 +21,9 @@ Open <http://127.0.0.1:8765/>. Leave the tunnel running while using the tool. St
 
 ## Use
 
-In **Generate design**, enter a prompt, choose 1024 or 2048 output size and a seed, then generate. Download the PNG or choose **Send to Layers** to transfer it directly into the split workspace.
+In **Generate design**, enter a plain prompt. **Expand with Codex** is on by default: the Mac helper calls the signed-in Codex CLI with the [official Ming text-to-image rewriter instructions](../resources/t2i_rewriter_system_prompt.txt), validates the structured JSON, and then sends that JSON to Ming. The original prompt remains visible in job history; the full structured prompt is saved in the job manifest. The helper uses the signed-in Codex account and does not store an API key. Select 2048 for the model-card quality setting (about 2 minutes of warm generation in the local test); 1024 is faster. The model may still invent or distort small text, so inspect each result. Download the PNG or choose **Send to Layers** to transfer it directly into the split workspace.
+
+On the Mac that opens the Lab, install the helper once with `bash scripts/install_prompt_bridge_macos.sh`. It runs on `127.0.0.1:8766` as a LaunchAgent and accepts browser requests from the Lab at `http://127.0.0.1:8765`. If the helper is unavailable, uncheck **Expand with Codex** to send the prompt directly to Ming. This helper does not run on Spark 2; the image and layer models continue to run there.
 
 In **Split layers**, upload a PNG, JPEG, or WebP design (20 MB and 16 megapixels maximum), or use the transferred design. Write 2–8 layer descriptions in **front-to-back** order, with the background last. Name text exactly where possible. Choose 512 or 1024 working size and a seed, then generate. Only one inference job runs at once; up to three can wait in the queue. A cold checkpoint load still takes several minutes. The published Layer sample at 1024 took about 16 minutes end to end on GX10; other images may differ.
 

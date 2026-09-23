@@ -215,3 +215,9 @@ h1, h2, h3, p { margin-top: 0; }
   .metrics-strip > div { padding: 12px 8px; }
   .metrics-strip strong { font-size: 10px; }
 }
+.enhance-option { display: flex; gap: 10px; align-items: flex-start; padding: 12px 13px; margin: 0 0 16px; border: 1px solid var(--stroke); border-radius: 9px; background: var(--panel); cursor: pointer; }
+.enhance-option input { margin-top: 3px; accent-color: #3456e8; }
+.enhance-option span { display: grid; gap: 3px; }
+.enhance-option strong { font-size: 12px; }
+.enhance-option small { color: var(--dim); font-size: 11px; line-height: 1.45; }
+.design-result a { display: block; padding: 0 10px 10px; font-size: 11px; }

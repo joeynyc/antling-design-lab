@@ -147,7 +147,7 @@ def compare_layers(input_path: Path, layer_paths: list[Path], output_dir: Path) 
 def public_job(job: dict) -> dict:
     job_id = job["id"]
     base = f"/api/jobs/{job_id}/assets"
-    result = {key: value for key, value in job.items() if key != "prompt"}
+    result = {key: value for key, value in job.items() if key not in ("prompt", "generation_prompt")}
     if job.get("kind", "layers") == "design":
         if job["status"] == "done":
             result["design_url"] = f"{base}/design.png"
@@ -421,7 +421,7 @@ class JobRuntime:
                 self.processor,
                 self.profile,
                 task="text-to-image",
-                prompt=job["design_prompt"],
+                prompt=job.get("generation_prompt", job["design_prompt"]),
                 input_image=None,
                 resolution=job["resolution"],
                 sampling=sampling,
@@ -578,8 +578,20 @@ def create_design_job(
     resolution: int = Form(1024),
     seed: int = Form(42),
     steps: int = Form(12),
+    source_prompt: str | None = Form(None),
+    enhancement: str = Form("none"),
 ):
     prompt = prompt.strip()
+    if enhancement not in ("none", "codex"):
+        raise HTTPException(422, "Unknown prompt enhancement")
+    if enhancement == "codex" and source_prompt is None:
+        raise HTTPException(422, "Original prompt is required for Codex enhancement")
+    if source_prompt is not None:
+        source_prompt = source_prompt.strip()
+        if not 5 <= len(source_prompt) <= 5000:
+            raise HTTPException(422, "Original prompt must be 5–5000 characters")
+        if enhancement != "codex":
+            raise HTTPException(422, "Enhanced prompt must identify its source")
     if not 5 <= len(prompt) <= 5000:
         raise HTTPException(422, "Describe the design in 5–5000 characters")
     if resolution not in (1024, 2048):
@@ -599,7 +611,8 @@ def create_design_job(
         "created_at": now_iso(),
         "started_at": None,
         "finished_at": None,
-        "design_prompt": prompt,
+        "design_prompt": source_prompt or prompt,
+        "enhancement": enhancement,
         "resolution": resolution,
         "seed": seed,
         "steps": steps,
@@ -607,6 +620,8 @@ def create_design_job(
         "model_revision": DESIGN_MODEL_REVISION,
         "upstream_revision": UPSTREAM_REVISION,
     }
+    if source_prompt:
+        job["generation_prompt"] = prompt
     try:
         runtime.add_job(job)
     except HTTPException:
@@ -648,7 +663,8 @@ async def skill_generate_design(payload: dict):
     except (TypeError, ValueError) as exc:
         raise HTTPException(422, "Seed must be an integer") from exc
     created = create_design_job(
-        prompt=str(payload.get("prompt", "")), resolution=resolution, seed=seed, steps=12
+        prompt=str(payload.get("prompt", "")), resolution=resolution, seed=seed,
+        steps=12, source_prompt=None, enhancement="none"
     )
     job = await wait_for_skill_job(created["id"])
     with Image.open(JOBS_DIR / job["id"] / "design.png") as image:

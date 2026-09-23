@@ -10,7 +10,7 @@ const DEFAULT_LAYERS = [
 const state = {
   mode: "design",
   jobs: {design: null, layers: null},
-  designResolution: 1024,
+  designResolution: 2048,
   file: null,
   localUrl: null,
   inputSize: null,
@@ -240,6 +240,13 @@ function renderResults() {
     thumbnail.src = job.design_url;
     thumbnail.alt = "Generated design thumbnail";
     card.append(thumbnail, makeElement("p", "", job.design_prompt));
+    if (job.enhancement === "codex") {
+      const link = makeElement("a", "", "View structured prompt ↗");
+      link.href = `/api/jobs/${job.id}/assets/manifest.json`;
+      link.target = "_blank";
+      link.rel = "noopener";
+      card.append(link);
+    }
     list.append(card);
     return;
   }
@@ -432,11 +439,37 @@ async function submitDesignJob(event) {
   const seed = Number(byId("design-seed-input").value);
   if (!Number.isInteger(seed) || seed < 0 || seed > 4294967295) { showError("Choose a whole-number seed from 0 to 4294967295."); return; }
   const data = new FormData();
-  data.append("prompt", prompt);
   data.append("resolution", String(state.designResolution));
   data.append("seed", String(seed));
   byId("generate-design-button").disabled = true;
   try {
+    if (byId("enhance-prompt").checked) {
+      byId("job-stage").textContent = "Expanding prompt with Codex";
+      byId("job-message").textContent = "Codex is describing the layout, colors, and exact text before Ming draws it.";
+      byId("job-clock").textContent = "";
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 190000);
+      let rewritten;
+      try {
+        const rewriteResponse = await fetch("http://127.0.0.1:8766/rewrite", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({prompt}), signal: controller.signal,
+        });
+        rewritten = await rewriteResponse.json();
+        if (!rewriteResponse.ok) throw new Error(rewritten.error || "Codex could not expand this prompt.");
+      } catch (error) {
+        if (error.name === "AbortError") throw new Error("Codex took too long to expand the prompt.");
+        if (error instanceof TypeError) throw new Error("The Codex helper on this Mac is not running. Start scripts/prompt_rewriter_bridge.py or uncheck Expand with Codex.");
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+      data.append("prompt", rewritten.prompt);
+      data.append("source_prompt", prompt);
+      data.append("enhancement", "codex");
+    } else {
+      data.append("prompt", prompt);
+    }
     const response = await fetch("/api/design-jobs", {method: "POST", body: data});
     const body = await response.json();
     if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "The design job could not start.");
