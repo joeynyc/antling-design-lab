@@ -8,6 +8,8 @@ The [official six-layer sample](docs/gx10-smoke.md) completed on a DGX Spark GX1
 
 An independent design test is still needed to judge how well the model handles real editing work.
 
+The separate Design text-to-image checkpoint has been [tested alongside the Layer model on Spark 2](docs/gx10-coexist.md). It is not yet part of the web interface.
+
 Generated layers are raster images. Text within them remains pixels rather than editable font text.
 
 This project is independent of the upstream model and its maintainers.

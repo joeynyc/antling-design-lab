@@ -29,6 +29,7 @@ checkpoints/
 *.log
 *.zip
 model/
+design-model/
 download.log
 upstream/
 .cache/
