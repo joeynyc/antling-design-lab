@@ -32,3 +32,4 @@ model/
 download.log
 upstream/
 .cache/
+jobs/

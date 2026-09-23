@@ -1,0 +1,435 @@
+"""Local, single-GPU web interface for Ming Design-Layer."""
+
+from __future__ import annotations
+
+import gc
+import io
+import json
+import os
+import queue
+import re
+import shutil
+import sys
+import threading
+import time
+import traceback
+import uuid
+import zipfile
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from types import SimpleNamespace
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from PIL import Image, ImageChops, ImageOps, ImageStat, UnidentifiedImageError
+
+WEB_DIR = Path(__file__).resolve().parent
+UPSTREAM_DIR = Path(os.environ.get("MING_UPSTREAM_DIR", "/upstream"))
+MODEL_DIR = Path(os.environ.get("MING_MODEL_DIR", "/model"))
+JOBS_DIR = Path(os.environ.get("MING_JOBS_DIR", "/jobs"))
+MODEL_REVISION = os.environ.get(
+    "MING_MODEL_REVISION", "650448783505b103af305ce347bf60d8889e655a"
+)
+UPSTREAM_REVISION = os.environ.get(
+    "MING_UPSTREAM_REVISION", "62c6072e1ff15af83f7c4963a0a1954c1424e80e"
+)
+IDLE_UNLOAD_SECONDS = int(os.environ.get("MING_IDLE_UNLOAD_SECONDS", "900"))
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_IMAGE_PIXELS = 16_000_000
+MAX_PENDING_JOBS = 3
+JOB_ID_PATTERN = re.compile(r"[a-f0-9]{32}\Z")
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def make_prompt(layers: list[str]) -> str:
+    count = len(layers)
+    header = (
+        f"Decompose this image into {count} layers with the following specifications:\n\n"
+        f"Number of layers: {count}\n"
+    )
+    return header + "\n" + "\n".join(
+        f"Layer {index}: {description}"
+        for index, description in enumerate(layers, start=1)
+    )
+
+
+def compare_layers(input_path: Path, layer_paths: list[Path], output_dir: Path) -> dict:
+    layers = [Image.open(path).convert("RGBA") for path in layer_paths]
+    size = layers[0].size
+    if any(layer.size != size for layer in layers):
+        raise ValueError("The model returned layers with different dimensions")
+
+    composite = Image.new("RGBA", size, (0, 0, 0, 0))
+    for layer in reversed(layers):
+        composite = Image.alpha_composite(composite, layer)
+    composite.convert("RGB").save(output_dir / "recomposed.png")
+
+    with Image.open(input_path) as source:
+        input_size = source.size
+        reference = source.convert("RGB")
+    if reference.size != size:
+        reference = reference.resize(size, Image.Resampling.LANCZOS)
+    difference = ImageChops.difference(reference, composite.convert("RGB"))
+    difference.save(output_dir / "difference.png")
+    difference.point(lambda value: min(255, value * 8)).save(
+        output_dir / "difference-visible.png"
+    )
+    channel_means = ImageStat.Stat(difference).mean
+    return {
+        "input_size": list(input_size),
+        "output_size": list(size),
+        "rgb_mae_0_to_255": round(sum(channel_means) / 3, 4),
+        "difference_display_scale": 8,
+    }
+
+
+def public_job(job: dict) -> dict:
+    job_id = job["id"]
+    base = f"/api/jobs/{job_id}/assets"
+    result = {key: value for key, value in job.items() if key != "prompt"}
+    result["input_url"] = f"{base}/input.png"
+    if job["status"] == "done":
+        result["layer_urls"] = [
+            f"{base}/layer_{index:02d}.png"
+            for index in range(1, len(job["layers"]) + 1)
+        ]
+        result["recomposed_url"] = f"{base}/recomposed.png"
+        result["difference_url"] = f"{base}/difference-visible.png"
+        result["zip_url"] = f"{base}/bundle.zip"
+    return result
+
+
+class JobRuntime:
+    def __init__(self) -> None:
+        self.jobs: dict[str, dict] = {}
+        self.lock = threading.RLock()
+        self.pending: queue.Queue[str | None] = queue.Queue()
+        self.worker: threading.Thread | None = None
+        self.stopping = threading.Event()
+        self.unload_requested = threading.Event()
+        self.model = None
+        self.processor = None
+        self.profile = None
+        self.active_id: str | None = None
+        self.last_used = 0.0
+
+    def start(self) -> None:
+        JOBS_DIR.mkdir(parents=True, exist_ok=True)
+        for manifest_path in JOBS_DIR.glob("*/manifest.json"):
+            try:
+                manifest = json.loads(manifest_path.read_text())
+                if JOB_ID_PATTERN.fullmatch(manifest["id"]):
+                    self.jobs[manifest["id"]] = manifest
+            except (KeyError, ValueError, OSError):
+                continue
+        self.worker = threading.Thread(target=self._work_loop, daemon=True)
+        self.worker.start()
+
+    def stop(self) -> None:
+        self.stopping.set()
+        self.pending.put(None)
+        if self.worker:
+            self.worker.join(timeout=2)
+
+    def add_job(self, job: dict) -> None:
+        with self.lock:
+            if self.pending.qsize() >= MAX_PENDING_JOBS:
+                raise HTTPException(429, "The GPU queue is full. Try again later.")
+            self.jobs[job["id"]] = job
+            self.pending.put(job["id"])
+
+    def get_job(self, job_id: str) -> dict:
+        if not JOB_ID_PATTERN.fullmatch(job_id):
+            raise HTTPException(404, "Job not found")
+        with self.lock:
+            if job_id not in self.jobs:
+                raise HTTPException(404, "Job not found")
+            return dict(self.jobs[job_id])
+
+    def update(self, job_id: str, **values) -> None:
+        with self.lock:
+            self.jobs[job_id].update(values)
+
+    def _release_model(self) -> None:
+        self.model = None
+        self.processor = None
+        self.profile = None
+        gc.collect()
+        try:
+            import torch
+
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+        self.unload_requested.clear()
+
+    def _work_loop(self) -> None:
+        while not self.stopping.is_set():
+            try:
+                job_id = self.pending.get(timeout=5)
+            except queue.Empty:
+                if self.model is not None and (
+                    self.unload_requested.is_set()
+                    or time.monotonic() - self.last_used > IDLE_UNLOAD_SECONDS
+                ):
+                    self._release_model()
+                continue
+            if job_id is None:
+                break
+            with self.lock:
+                self.active_id = job_id
+            try:
+                self._run_job(job_id)
+            except Exception as exc:
+                traceback.print_exc()
+                self.update(
+                    job_id,
+                    status="error",
+                    error=f"{type(exc).__name__}: {str(exc)[:500]}",
+                    finished_at=now_iso(),
+                )
+                self._release_model()
+            finally:
+                with self.lock:
+                    self.active_id = None
+                self.last_used = time.monotonic()
+                self.pending.task_done()
+
+    def _load_model(self) -> float:
+        if self.model is not None:
+            return 0.0
+        started = time.monotonic()
+        if str(UPSTREAM_DIR) not in sys.path:
+            sys.path.insert(0, str(UPSTREAM_DIR))
+        from infer import load_model_and_processor
+        from inference_profile import load_checkpoint_capabilities
+
+        self.profile = load_checkpoint_capabilities(MODEL_DIR)
+        args = SimpleNamespace(
+            processor=None,
+            dtype="bfloat16",
+            attn_implementation="eager",
+            device="cuda:0",
+            device_map="balanced",
+            num_gpus=1,
+        )
+        self.model, self.processor = load_model_and_processor(MODEL_DIR, args)
+        return round(time.monotonic() - started, 2)
+
+    def _run_job(self, job_id: str) -> None:
+        job = self.get_job(job_id)
+        job_dir = JOBS_DIR / job_id
+        started = time.monotonic()
+        self.update(job_id, status="loading", started_at=now_iso())
+        load_seconds = self._load_model()
+        self.profile.validate_task(
+            "layer-decompose", has_reference_image=True, num_layers=len(job["layers"])
+        )
+        from infer import run_generation
+        import torch
+
+        sampling = self.profile.resolve_sampling_parameters(steps=12, cfg=2.0)
+        self.update(job_id, status="running", load_seconds=load_seconds)
+        generation_started = time.monotonic()
+        with torch.inference_mode():
+            images = run_generation(
+                self.model,
+                self.processor,
+                self.profile,
+                task="layer-decompose",
+                prompt=job["prompt"],
+                input_image=job_dir / "input.png",
+                resolution=job["resolution"],
+                sampling=sampling,
+                seed=job["seed"],
+                num_layers=len(job["layers"]),
+                dtype=torch.bfloat16,
+            )
+        generation_seconds = round(time.monotonic() - generation_started, 2)
+        self.update(job_id, status="saving", generation_seconds=generation_seconds)
+        images[0].save(job_dir / "model-composite.png")
+        layer_paths = []
+        for index, image in enumerate(images[1:], start=1):
+            path = job_dir / f"layer_{index:02d}.png"
+            image.save(path)
+            layer_paths.append(path)
+        del images
+        metrics = compare_layers(job_dir / "input.png", layer_paths, job_dir)
+        manifest = self.get_job(job_id)
+        manifest.update(
+            status="done",
+            metrics=metrics,
+            total_seconds=round(time.monotonic() - started, 2),
+            finished_at=now_iso(),
+        )
+        (job_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        archive_names = [
+            "input.png",
+            "model-composite.png",
+            "recomposed.png",
+            "difference.png",
+            "difference-visible.png",
+            "manifest.json",
+        ] + [path.name for path in layer_paths]
+        with zipfile.ZipFile(job_dir / "bundle.zip", "w", zipfile.ZIP_DEFLATED) as bundle:
+            for name in archive_names:
+                bundle.write(job_dir / name, name)
+        self.update(
+            job_id,
+            status="done",
+            metrics=metrics,
+            total_seconds=round(time.monotonic() - started, 2),
+            finished_at=manifest["finished_at"],
+        )
+        torch.cuda.empty_cache()
+
+
+runtime = JobRuntime()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    runtime.start()
+    try:
+        yield
+    finally:
+        runtime.stop()
+
+
+app = FastAPI(title="Ming Design Layer", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
+
+
+@app.get("/")
+def index():
+    return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/api/health")
+def health():
+    with runtime.lock:
+        return {
+            "model_loaded": runtime.model is not None,
+            "active_job": runtime.active_id,
+            "queued_jobs": runtime.pending.qsize(),
+            "idle_unload_seconds": IDLE_UNLOAD_SECONDS,
+            "model_revision": MODEL_REVISION,
+        }
+
+
+@app.get("/api/jobs")
+def list_jobs():
+    with runtime.lock:
+        jobs = sorted(runtime.jobs.values(), key=lambda job: job["created_at"], reverse=True)
+        return [public_job(dict(job)) for job in jobs[:20]]
+
+
+@app.post("/api/jobs", status_code=202)
+async def create_job(
+    image: UploadFile = File(...),
+    layers: str = Form(...),
+    resolution: int = Form(1024),
+    seed: int = Form(42),
+):
+    try:
+        layer_descriptions = json.loads(layers)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(422, "Layer plan must be a JSON array") from exc
+    if not isinstance(layer_descriptions, list) or not 2 <= len(layer_descriptions) <= 8:
+        raise HTTPException(422, "Choose between 2 and 8 layers")
+    if any(
+        not isinstance(item, str) or not 3 <= len(item.strip()) <= 300
+        for item in layer_descriptions
+    ):
+        raise HTTPException(422, "Each layer needs a description of 3–300 characters")
+    layer_descriptions = [item.strip() for item in layer_descriptions]
+    if resolution not in (512, 1024):
+        raise HTTPException(422, "Resolution must be 512 or 1024")
+    if not 0 <= seed <= 2**32 - 1:
+        raise HTTPException(422, "Seed is out of range")
+
+    data = await image.read(MAX_UPLOAD_BYTES + 1)
+    await image.close()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Image exceeds the 20 MB limit")
+    try:
+        with Image.open(io.BytesIO(data)) as opened:
+            if opened.format not in ("PNG", "JPEG", "WEBP"):
+                raise HTTPException(415, "Use a PNG, JPEG, or WebP image")
+            if opened.width * opened.height > MAX_IMAGE_PIXELS:
+                raise HTTPException(413, "Image exceeds the 16 megapixel limit")
+            if min(opened.size) < 64:
+                raise HTTPException(422, "Image must be at least 64 pixels on each side")
+            input_image = ImageOps.exif_transpose(opened).convert("RGB")
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as exc:
+        raise HTTPException(415, "Could not read this image") from exc
+
+    job_id = uuid.uuid4().hex
+    job_dir = JOBS_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=False)
+    input_image.save(job_dir / "input.png")
+    job = {
+        "id": job_id,
+        "status": "queued",
+        "created_at": now_iso(),
+        "started_at": None,
+        "finished_at": None,
+        "layers": layer_descriptions,
+        "prompt": make_prompt(layer_descriptions),
+        "resolution": resolution,
+        "seed": seed,
+        "steps": 12,
+        "cfg": 2.0,
+        "model_revision": MODEL_REVISION,
+        "upstream_revision": UPSTREAM_REVISION,
+        "input_size": list(input_image.size),
+    }
+    try:
+        runtime.add_job(job)
+    except HTTPException:
+        shutil.rmtree(job_dir)
+        raise
+    return public_job(job)
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str):
+    return public_job(runtime.get_job(job_id))
+
+
+@app.get("/api/jobs/{job_id}/assets/{filename}")
+def get_asset(job_id: str, filename: str):
+    job = runtime.get_job(job_id)
+    allowed = {"input.png"}
+    if job["status"] == "done":
+        allowed.update(
+            {
+                "recomposed.png",
+                "model-composite.png",
+                "difference.png",
+                "difference-visible.png",
+                "manifest.json",
+                "bundle.zip",
+            }
+        )
+        allowed.update(f"layer_{index:02d}.png" for index in range(1, len(job["layers"]) + 1))
+    if filename not in allowed:
+        raise HTTPException(404, "File not found")
+    path = JOBS_DIR / job_id / filename
+    if not path.is_file():
+        raise HTTPException(404, "File not found")
+    return FileResponse(path, filename=filename if filename == "bundle.zip" else None)
+
+
+@app.post("/api/model/unload", status_code=202)
+def unload_model():
+    with runtime.lock:
+        if runtime.active_id is not None or runtime.pending.qsize():
+            raise HTTPException(409, "The model is in use")
+        runtime.unload_requested.set()
+    return {"status": "releasing"}

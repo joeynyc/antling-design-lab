@@ -20,3 +20,10 @@ WORKDIR /workspace
 # uses BF16 and does not need torchao quantization.
 RUN python -m pip uninstall -y torchao \
     && python -c "from diffusers import AutoencoderKL"
+
+RUN python -m pip install --no-cache-dir \
+    fastapi==0.116.1 \
+    uvicorn==0.35.0 \
+    python-multipart==0.0.20 \
+    httpx==0.28.1 \
+    && python -c "import fastapi, uvicorn, multipart, httpx"
