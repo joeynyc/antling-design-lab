@@ -15,3 +15,8 @@ RUN python -m pip install --no-cache-dir \
     tqdm==4.67.1
 
 WORKDIR /workspace
+
+# NGC's torchao lacks NF4Tensor expected by diffusers 0.36; this checkpoint
+# uses BF16 and does not need torchao quantization.
+RUN python -m pip uninstall -y torchao \
+    && python -c "from diffusers import AutoencoderKL"

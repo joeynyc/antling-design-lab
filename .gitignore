@@ -30,3 +30,5 @@ checkpoints/
 *.zip
 model/
 download.log
+upstream/
+.cache/
