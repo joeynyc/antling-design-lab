@@ -1,0 +1,17 @@
+# Experimental DGX Spark runtime. The upstream pins target a different CUDA
+# environment; NVIDIA's container supplies a Blackwell-capable PyTorch build.
+FROM nvcr.io/nvidia/pytorch:26.08-py3
+
+RUN python -m pip install --no-cache-dir \
+    transformers==4.57.1 \
+    diffusers==0.36.0 \
+    accelerate==1.13.0 \
+    peft==0.17.0 \
+    huggingface-hub==0.34.0 \
+    tokenizers==0.22.2 \
+    safetensors==0.7.0 \
+    Pillow==10.4.0 \
+    requests==2.32.3 \
+    tqdm==4.67.1
+
+WORKDIR /workspace
