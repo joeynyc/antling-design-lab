@@ -1,6 +1,6 @@
 # Local Ming agent skills
 
-The published `ling-ui-design` and `image-to-editable-ppt` skills from [inclusionAI/ling-cookbook](https://github.com/inclusionAI/ling-cookbook/tree/main/resources/recommended-skills) are installed under `~/.codex/skills/` on Joey's Mac and linked into `~/.claude/skills/` for Claude Code. Their local `.env` files point to `http://127.0.0.1:8765/v1`, which is served by the Spark 2 Layer Lab through the existing SSH tunnel. The API key values in those files are local placeholders; this setup does not use a paid image provider.
+The published `ling-ui-design` and `image-to-editable-ppt` skills from [inclusionAI/ling-cookbook](https://github.com/inclusionAI/ling-cookbook/tree/main/resources/recommended-skills) are installed under `~/.codex/skills/` on Joey's Mac and linked into `~/.claude/skills/` for Claude Code. Their local `.env` files point to `http://127.0.0.1:8765/v1`, which is served by Ming Design Lab on Spark 2 through the existing SSH tunnel. The API key values in those files are local placeholders; this setup does not use a paid image provider.
 
 The web server implements two compatibility routes:
 

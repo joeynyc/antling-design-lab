@@ -1,4 +1,4 @@
-# Ming Image Design Layer Workspace
+# Ming Design Lab
 
 A local interface for [Ming-Image-0.1-Design](https://huggingface.co/inclusionAI/Ming-Image-0.1-Design) and [Ming-Image-0.1-Design-Layer](https://huggingface.co/inclusionAI/Ming-Image-0.1-Design-Layer). Expand a plain prompt into Ming's structured design format with the Codex CLI on your Mac, generate a design, then send it directly into layer splitting. The Layer model also accepts an uploaded image and produces separate transparent raster layers. See the [official inference repository](https://github.com/inclusionAI/Ming-Image) for model details.
 

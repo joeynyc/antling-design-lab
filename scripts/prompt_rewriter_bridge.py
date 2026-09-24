@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local Mac bridge from Layer Lab to the signed-in Codex CLI."""
+"""Local Mac bridge from Ming Design Lab to the signed-in Codex CLI."""
 
 from __future__ import annotations
 

@@ -465,7 +465,7 @@ async def lifespan(_: FastAPI):
         runtime.stop()
 
 
-app = FastAPI(title="Ming Layer Lab", lifespan=lifespan)
+app = FastAPI(title="Ming Design Lab", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
 
