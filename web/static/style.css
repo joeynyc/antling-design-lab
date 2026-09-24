@@ -175,13 +175,18 @@ h1, h2, h3, p { margin-top: 0; }
 .job-card strong { font-size: 11px; }
 .job-card p { color: var(--muted); font-size: 10px; line-height: 1.45; margin: 9px 0 0; overflow-wrap: anywhere; }
 .job-clock { color: var(--accent); font-size: 10px; display: block; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.job-breakdown { color: var(--muted); font-size: 10px; line-height: 1.45; display: block; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.job-breakdown:empty { display: none; }
 .result-actions { display: flex; gap: 8px; margin: 0 14px 10px; }
 .result-actions > * { flex: 1; text-align: center; }
+.source-export { margin: 0 14px 12px; padding: 10px; border: 1px solid var(--stroke-soft); border-radius: 8px; background: #f3effb; }
+.source-export a { display: block; text-align: center; text-decoration: none; color: var(--accent); }
+.source-export p { color: var(--muted); font-size: 10px; line-height: 1.4; margin: 7px 1px 0; }
 .design-actions { display: flex; flex-direction: column; gap: 8px; margin: 0 14px 13px; }
 .design-actions > * { width: 100%; text-align: center; justify-content: center; }
 .design-actions .small-button { padding: 10px; color: var(--accent); }
 .design-result { border: 1px solid var(--stroke-soft); background: var(--panel); border-radius: 9px; overflow: hidden; }
-.design-result img { display: block; width: 100%; height: auto; }
+.design-result img { display: block; width: 100%; height: 180px; object-fit: contain; background: #f3f1fa; }
 .design-result p { color: var(--muted); font-size: 11px; line-height: 1.5; padding: 12px; margin: 0; overflow-wrap: anywhere; }
 .download-button { display: grid; place-items: center; background: var(--accent); border-radius: 7px; color: #ffffff; text-decoration: none; font-size: 11px; font-weight: 700; padding: 8px 5px; }
 .download-button:hover { background: var(--accent-dark); }
@@ -241,4 +246,5 @@ h1, h2, h3, p { margin-top: 0; }
 .enhance-option span { display: grid; gap: 3px; }
 .enhance-option strong { font-size: 12px; }
 .enhance-option small { color: var(--dim); font-size: 11px; line-height: 1.45; }
+.resolution-note { color: var(--muted); font-size: 11px; line-height: 1.45; padding: 10px 11px; margin: 0 0 3px; border-radius: 7px; background: #f3effb; }
 .design-result a { display: block; padding: 0 10px 10px; font-size: 11px; }

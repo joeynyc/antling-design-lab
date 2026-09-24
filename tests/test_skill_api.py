@@ -69,6 +69,7 @@ class SkillApiTests(unittest.TestCase):
                         "source_prompt": "A local AI landing page",
                         "enhancement": "codex",
                         "resolution": "2048",
+                        "rewrite_seconds": "22.5",
                     },
                 )
             self.assertEqual(response.status_code, 202)
@@ -77,6 +78,7 @@ class SkillApiTests(unittest.TestCase):
             queued = add_job.call_args.args[0]
             self.assertEqual(queued["generation_prompt"], '{"canvas_settings": {}, "layers": []}')
             self.assertEqual(queued["resolution"], 2048)
+            self.assertEqual(queued["rewrite_seconds"], 22.5)
 
     def test_edit_returns_ordered_rgba_layers(self):
         with tempfile.TemporaryDirectory() as directory:

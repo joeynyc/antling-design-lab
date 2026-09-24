@@ -7,6 +7,7 @@ import base64
 import gc
 import io
 import json
+import math
 import os
 import queue
 import re
@@ -50,6 +51,7 @@ MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_PIXELS = 16_000_000
 MAX_PENDING_JOBS = 3
 JOB_ID_PATTERN = re.compile(r"[a-f0-9]{32}\Z")
+SOURCE_EXPORT_LOCK = threading.Lock()
 
 
 def now_iso() -> str:
@@ -144,6 +146,61 @@ def compare_layers(input_path: Path, layer_paths: list[Path], output_dir: Path) 
     }
 
 
+def source_cutouts_available(job: dict) -> bool:
+    """A source-size export can reuse model masks when the input is larger."""
+    if job.get("kind", "layers") != "layers" or job.get("status") != "done":
+        return False
+    source_size = job.get("input_size")
+    output_size = (job.get("metrics") or {}).get("output_size")
+    return bool(
+        source_size
+        and output_size
+        and any(source > output for source, output in zip(source_size, output_size))
+    )
+
+
+def create_source_cutouts(job_id: str, job: dict) -> Path:
+    """Apply model alpha masks to the original pixels without claiming 2K inference."""
+    job_dir = JOBS_DIR / job_id
+    target = job_dir / "source-cutouts.zip"
+    with SOURCE_EXPORT_LOCK:
+        if target.is_file():
+            return target
+        temporary = job_dir / f".source-cutouts-{uuid.uuid4().hex}.zip"
+        try:
+            with Image.open(job_dir / "input.png") as opened:
+                source = opened.convert("RGB")
+            transparent_rgb = Image.new("RGB", source.size)
+            with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as bundle:
+                bundle.writestr(
+                    "README.txt",
+                    "Source-size masked cutouts from Ming Design Lab.\n"
+                    "The Layer model ran at its selected working size, not at the source size.\n"
+                    "Its alpha masks were resized and applied to the original pixels.\n"
+                    "These are raster cutouts, not newly generated high-resolution layers.\n"
+                    "Edges and overlapping content may need cleanup before reuse.\n"
+                    "Lettering remains pixels, not editable font text.\n",
+                )
+                bundle.write(job_dir / "input.png", "original.png")
+                for index in range(1, len(job["layers"]) + 1):
+                    with Image.open(job_dir / f"layer_{index:02d}.png") as layer:
+                        alpha = layer.convert("RGBA").getchannel("A")
+                    if alpha.size != source.size:
+                        alpha = alpha.resize(source.size, Image.Resampling.LANCZOS)
+                    visible_pixels = alpha.point(lambda value: 255 if value else 0)
+                    cutout = Image.composite(
+                        source, transparent_rgb, visible_pixels
+                    ).convert("RGBA")
+                    cutout.putalpha(alpha)
+                    with io.BytesIO() as data:
+                        cutout.save(data, format="PNG")
+                        bundle.writestr(f"source_layer_{index:02d}.png", data.getvalue())
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return target
+
+
 def public_job(job: dict) -> dict:
     job_id = job["id"]
     base = f"/api/jobs/{job_id}/assets"
@@ -161,6 +218,8 @@ def public_job(job: dict) -> dict:
         result["recomposed_url"] = f"{base}/recomposed.png"
         result["difference_url"] = f"{base}/difference-visible.png"
         result["zip_url"] = f"{base}/bundle.zip"
+        if source_cutouts_available(job):
+            result["source_zip_url"] = f"{base}/source-cutouts.zip"
     return result
 
 
@@ -580,12 +639,19 @@ def create_design_job(
     steps: int = Form(12),
     source_prompt: str | None = Form(None),
     enhancement: str = Form("none"),
+    rewrite_seconds: float | None = Form(None),
 ):
     prompt = prompt.strip()
     if enhancement not in ("none", "codex"):
         raise HTTPException(422, "Unknown prompt enhancement")
     if enhancement == "codex" and source_prompt is None:
         raise HTTPException(422, "Original prompt is required for Codex enhancement")
+    if rewrite_seconds is not None and (
+        enhancement != "codex"
+        or not math.isfinite(rewrite_seconds)
+        or not 0 <= rewrite_seconds <= 190
+    ):
+        raise HTTPException(422, "Codex timing must be between 0 and 190 seconds")
     if source_prompt is not None:
         source_prompt = source_prompt.strip()
         if not 5 <= len(source_prompt) <= 5000:
@@ -622,6 +688,8 @@ def create_design_job(
     }
     if source_prompt:
         job["generation_prompt"] = prompt
+    if rewrite_seconds is not None:
+        job["rewrite_seconds"] = round(rewrite_seconds, 2)
     try:
         runtime.add_job(job)
     except HTTPException:
@@ -762,12 +830,18 @@ def get_asset(job_id: str, filename: str):
             }
         )
         allowed.update(f"layer_{index:02d}.png" for index in range(1, len(job["layers"]) + 1))
+        if source_cutouts_available(job):
+            allowed.add("source-cutouts.zip")
     if filename not in allowed:
         raise HTTPException(404, "File not found")
-    path = JOBS_DIR / job_id / filename
+    path = (
+        create_source_cutouts(job_id, job)
+        if filename == "source-cutouts.zip"
+        else JOBS_DIR / job_id / filename
+    )
     if not path.is_file():
         raise HTTPException(404, "File not found")
-    return FileResponse(path, filename=filename if filename == "bundle.zip" else None)
+    return FileResponse(path, filename=filename if filename.endswith(".zip") else None)
 
 
 @app.post("/api/model/unload", status_code=202)

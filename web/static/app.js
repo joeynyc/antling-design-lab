@@ -101,6 +101,7 @@ function setInputFile(file) {
   const probe = new Image();
   probe.onload = () => {
     state.inputSize = [probe.naturalWidth, probe.naturalHeight];
+    renderResolutionNote();
     byId("input-thumb").src = state.localUrl;
     byId("input-name").textContent = file.name;
     byId("input-dimensions").textContent = `${probe.naturalWidth} × ${probe.naturalHeight} · ${(file.size / 1024 / 1024).toFixed(1)} MB`;
@@ -129,11 +130,33 @@ function secondsLabel(value) {
   return minutes ? `${minutes}m ${String(seconds % 60).padStart(2, "0")}s` : `${seconds}s`;
 }
 
+function renderResolutionNote() {
+  const input = state.inputSize ? `Input ${displaySize(state.inputSize)} → ` : "";
+  byId("layer-resolution-note").textContent = `${input}${state.resolution} px working size. Ming Layers outputs up to 1024 px; larger inputs are resized for the model. Source-size masked cutouts are available after splitting larger images.`;
+}
+
 function setView(view) {
   if (state.mode === "design") return;
   if (view !== "input" && state.job?.status !== "done") return;
   state.view = view;
   renderPreview();
+}
+
+function setArtworkImage(source, alt) {
+  const image = byId("artwork-image");
+  image.alt = alt;
+  if (image.getAttribute("src") !== source) {
+    image.hidden = true;
+    image.onload = () => {
+      if (image.getAttribute("src") === source &&
+          (state.mode === "design" || !["layers", "split"].includes(state.view))) {
+        image.hidden = false;
+      }
+    };
+    image.src = source;
+  } else {
+    image.hidden = !(image.complete && image.naturalWidth > 0);
+  }
 }
 
 function sizeArtworkFrame(width, height) {
@@ -188,20 +211,16 @@ function renderPreview() {
   byId("split-control").hidden = designMode || state.view !== "split";
 
   if (designMode) {
-    image.src = source;
-    image.alt = "Generated design";
+    setArtworkImage(source, "Generated design");
     byId("canvas-caption").textContent = "Generated design · ready to download or split";
   } else if (state.view === "input") {
-    image.src = source;
-    image.alt = "Flattened input design";
+    setArtworkImage(source, "Flattened input design");
     byId("canvas-caption").textContent = "Original flattened design";
   } else if (state.view === "recomposed") {
-    image.src = job.recomposed_url;
-    image.alt = "Recomposed design from generated layers";
+    setArtworkImage(job.recomposed_url, "Recomposed design from generated layers");
     byId("canvas-caption").textContent = "Generated layers recomposed back to front";
   } else if (state.view === "difference") {
-    image.src = job.difference_url;
-    image.alt = "Amplified pixel difference between input and recomposition";
+    setArtworkImage(job.difference_url, "Amplified pixel difference between input and recomposition");
     byId("canvas-caption").textContent = "Pixel difference amplified 8× for visibility";
   } else if (state.view === "split") {
     byId("split-before").src = job.input_url;
@@ -250,6 +269,12 @@ function renderResults() {
   const job = state.job;
   byId("result-actions").hidden = state.mode !== "layers" || job?.status !== "done";
   byId("design-actions").hidden = state.mode !== "design" || job?.status !== "done";
+  byId("source-export").hidden = state.mode !== "layers" || job?.status !== "done" || !job.source_zip_url;
+  if (!byId("source-export").hidden) {
+    byId("download-source-cutouts").href = job.source_zip_url;
+    byId("download-source-cutouts").textContent = `Download ${displaySize(job.input_size)} cutouts ↓`;
+    byId("source-export-note").textContent = `Original pixels under ${displaySize(job.metrics.output_size)} model masks. These are source-size raster cutouts, not higher-resolution model output; edges may need cleanup.`;
+  }
   if (state.mode === "design" && job?.status === "done") {
     byId("download-design").href = job.design_url;
     const card = makeElement("div", "design-result");
@@ -281,7 +306,9 @@ function renderResults() {
     thumbnail.src = job.layer_urls[index];
     thumbnail.alt = `Layer ${index + 1}`;
     const copy = makeElement("div", "result-card-copy");
-    copy.append(makeElement("strong", "", `Layer ${String(index + 1).padStart(2, "0")}`), makeElement("span", "", description));
+    const descriptionText = makeElement("span", "", description);
+    descriptionText.title = description;
+    copy.append(makeElement("strong", "", `Layer ${String(index + 1).padStart(2, "0")}`), descriptionText);
     const actions = makeElement("div", "result-card-actions");
     const toggle = makeElement("button", "", state.visible[index] ? "◉" : "○");
     toggle.type = "button";
@@ -314,6 +341,18 @@ function renderResults() {
   });
 }
 
+function timingBreakdown(job) {
+  const parts = [];
+  if (job.rewrite_seconds !== undefined) parts.push(`Codex ${secondsLabel(job.rewrite_seconds)}`);
+  if (job.started_at && job.created_at) {
+    const queued = (Date.parse(job.started_at) - Date.parse(job.created_at)) / 1000;
+    if (queued >= 1) parts.push(`Queue ${secondsLabel(queued)}`);
+  }
+  if (job.load_seconds !== undefined) parts.push(`Model load ${secondsLabel(job.load_seconds)}`);
+  if (job.generation_seconds !== undefined) parts.push(`Generation ${secondsLabel(job.generation_seconds)}`);
+  return parts.join(" · ");
+}
+
 function renderJob() {
   const job = state.job;
   const card = byId("job-card");
@@ -322,6 +361,7 @@ function renderJob() {
     byId("job-stage").textContent = "No job running";
     byId("job-message").textContent = state.mode === "design" ? "Your generated design will appear here." : "Your generated layers will appear here.";
     byId("job-clock").textContent = "";
+    byId("job-breakdown").textContent = "";
     byId("metric-status").textContent = "Ready";
     byId("metric-time").textContent = "—";
     byId("metric-error").textContent = "—";
@@ -351,6 +391,7 @@ function renderJob() {
   byId("metric-status").textContent = names[job.status] || job.status;
   byId("metric-time").textContent = secondsLabel(job.generation_seconds);
   byId("metric-error").textContent = job.metrics ? `${job.metrics.rgb_mae_0_to_255} / 255` : "—";
+  byId("job-breakdown").textContent = timingBreakdown(job);
   const active = ["queued", "loading", "running", "saving"].includes(job.status);
   byId("generate-button").disabled = state.mode === "layers" && active;
   byId("generate-design-button").disabled = state.mode === "design" && active;
@@ -362,7 +403,8 @@ function updateClock() {
   if (!job) return;
   let seconds = job.total_seconds;
   if (seconds === undefined && job.created_at) seconds = (Date.now() - Date.parse(job.created_at)) / 1000;
-  byId("job-clock").textContent = secondsLabel(seconds) + (job.status === "done" ? " total" : " elapsed");
+  const label = job.status === "done" ? `${state.mode === "design" ? "Ming" : "Layer"} run` : "Elapsed";
+  byId("job-clock").textContent = `${label}: ${secondsLabel(seconds)}`;
 }
 
 function showError(message) {
@@ -371,6 +413,7 @@ function showError(message) {
   byId("job-stage").textContent = "Check your input";
   byId("job-message").textContent = message;
   byId("job-clock").textContent = "";
+  byId("job-breakdown").textContent = "";
   byId("metric-status").textContent = "Needs attention";
 }
 
@@ -461,6 +504,7 @@ async function submitDesignJob(event) {
   byId("generate-design-button").disabled = true;
   try {
     if (byId("enhance-prompt").checked) {
+      const rewriteStarted = performance.now();
       byId("job-stage").textContent = "Expanding prompt with Codex";
       byId("job-message").textContent = "Codex is describing the layout, colors, and exact text before Ming draws it.";
       byId("job-clock").textContent = "";
@@ -484,6 +528,7 @@ async function submitDesignJob(event) {
       data.append("prompt", rewritten.prompt);
       data.append("source_prompt", prompt);
       data.append("enhancement", "codex");
+      data.append("rewrite_seconds", String(((performance.now() - rewriteStarted) / 1000).toFixed(2)));
     } else {
       data.append("prompt", prompt);
     }
@@ -504,8 +549,10 @@ async function submitDesignJob(event) {
 
 function setMode(mode) {
   if (mode !== "design" && mode !== "layers") return;
+  if (mode !== state.mode) byId("artwork-image").removeAttribute("src");
   state.mode = mode;
   state.job = state.jobs[mode];
+  state.view = mode === "design" ? "input" : state.job?.status === "done" ? "recomposed" : "input";
   if (state.pollHandle) clearInterval(state.pollHandle);
   state.pollHandle = null;
   document.querySelectorAll("[data-mode]").forEach((button) => button.classList.toggle("selected", button.dataset.mode === mode));
@@ -516,7 +563,13 @@ function setMode(mode) {
   byId("metric-error").parentElement.hidden = mode === "design";
   byId("metrics-strip").classList.toggle("design-metrics", mode === "design");
   if (mode === "layers" && state.job?.status === "done" && !state.layerImages.length) {
-    loadLayerImages(state.job.layer_urls).then(() => { state.view = "recomposed"; renderResults(); renderPreview(); }).catch(() => showError("Could not load layer previews."));
+    const jobId = state.job.id;
+    loadLayerImages(state.job.layer_urls).then(() => {
+      if (state.mode !== "layers" || state.job?.id !== jobId) return;
+      state.view = "recomposed";
+      renderResults();
+      renderPreview();
+    }).catch(() => showError("Could not load layer previews."));
   }
   renderJob();
   renderResults();
@@ -534,6 +587,8 @@ async function sendToLayers() {
     if (!response.ok) throw new Error("Could not load the generated design.");
     const file = new File([await response.blob()], `ming-design-${job.id.slice(0, 8)}.png`, {type: "image/png"});
     setMode("layers");
+    state.resolution = 1024;
+    document.querySelectorAll("[data-resolution]").forEach((item) => item.classList.toggle("selected", Number(item.dataset.resolution) === state.resolution));
     state.layers = [...DEFAULT_LAYERS];
     renderPlan();
     setInputFile(file);
@@ -575,6 +630,7 @@ async function restoreRecentJob() {
       byId("seed-input").value = String(layerJob.seed);
       document.querySelectorAll("[data-resolution]").forEach((button) => button.classList.toggle("selected", Number(button.dataset.resolution) === state.resolution));
       renderPlan();
+      renderResolutionNote();
       byId("input-thumb").src = layerJob.input_url;
       byId("input-name").textContent = "Previous input";
       byId("input-dimensions").textContent = displaySize(layerJob.input_size);
@@ -627,6 +683,7 @@ function attachEvents() {
   document.querySelectorAll("[data-resolution]").forEach((button) => button.addEventListener("click", () => {
     state.resolution = Number(button.dataset.resolution);
     document.querySelectorAll("[data-resolution]").forEach((item) => item.classList.toggle("selected", item === button));
+    renderResolutionNote();
   }));
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
   byId("zoom-select").addEventListener("change", (event) => { state.zoom = event.target.value; renderPreview(); });
@@ -644,6 +701,7 @@ function attachEvents() {
 }
 
 renderPlan();
+renderResolutionNote();
 attachEvents();
 updateHealth();
 restoreRecentJob();

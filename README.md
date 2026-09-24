@@ -14,4 +14,6 @@ The web worker queues one GPU job at a time and [caches both checkpoints for the
 
 Generated layers are raster images. Text within them remains pixels rather than editable font text.
 
+For inputs larger than the Layer model's 1024 px maximum, the Lab can also export source-size cutouts by applying the model's alpha masks to the original image. These retain original pixels but are not newly generated high-resolution layers; inspect edges and overlapping content before reuse.
+
 This project is independent of the upstream model and its maintainers.

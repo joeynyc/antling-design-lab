@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Ming Design Lab</title>
-    <link rel="stylesheet" href="/static/style.css?v=7" />
-    <script src="/static/app.js?v=6" defer></script>
+    <link rel="stylesheet" href="/static/style.css?v=8" />
+    <script src="/static/app.js?v=8" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -89,6 +89,7 @@
                 <button type="button" data-resolution="512">512</button>
               </div>
             </div>
+            <p class="resolution-note" id="layer-resolution-note">Ming Layers outputs up to 1024 px. Smaller working size is faster, but produces smaller transparent PNGs.</p>
             <div class="setting-row seed-row">
               <div><strong>Seed</strong><span>Same seed helps compare plans.</span></div>
               <input id="seed-input" type="number" min="0" max="4294967295" value="42" />
@@ -120,7 +121,7 @@
             <button type="button" data-view="recomposed" disabled>Recomposed</button>
             <button type="button" data-view="layers" disabled>Layers</button>
             <button type="button" data-view="split" disabled>Split view</button>
-            <button type="button" data-view="difference" disabled>Difference</button>
+            <button type="button" data-view="difference" title="Diagnostic comparison, amplified 8×" disabled>Difference (8×)</button>
           </nav>
 
           <div class="canvas-viewport" id="canvas-viewport">
@@ -165,10 +166,15 @@
             <div class="job-card-top"><span class="job-indicator" id="job-indicator"></span><strong id="job-stage">No job running</strong></div>
             <p id="job-message">Your generated layers will appear here.</p>
             <span class="job-clock" id="job-clock"></span>
+            <span class="job-breakdown" id="job-breakdown"></span>
           </div>
           <div class="result-actions" id="result-actions" hidden>
             <button class="small-button" type="button" id="show-all">Show all</button>
             <a class="download-button" id="download-zip" href="#">Download ZIP ↓</a>
+          </div>
+          <div class="source-export" id="source-export" hidden>
+            <a class="small-button" id="download-source-cutouts" href="#">Download source-size cutouts ↓</a>
+            <p id="source-export-note"></p>
           </div>
           <div class="design-actions" id="design-actions" hidden>
             <a class="download-button" id="download-design" href="#" download="design.png">Download PNG ↓</a>
