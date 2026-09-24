@@ -174,7 +174,7 @@ def create_source_cutouts(job_id: str, job: dict) -> Path:
             with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as bundle:
                 bundle.writestr(
                     "README.txt",
-                    "Source-size masked cutouts from Ming Design Lab.\n"
+                    "Source-size masked cutouts from AntLing Design Lab.\n"
                     "The Layer model ran at its selected working size, not at the source size.\n"
                     "Its alpha masks were resized and applied to the original pixels.\n"
                     "These are raster cutouts, not newly generated high-resolution layers.\n"
@@ -524,7 +524,7 @@ async def lifespan(_: FastAPI):
         runtime.stop()
 
 
-app = FastAPI(title="Ming Design Lab", lifespan=lifespan)
+app = FastAPI(title="AntLing Design Lab", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
 

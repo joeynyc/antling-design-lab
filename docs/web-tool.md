@@ -1,4 +1,4 @@
-# Ming Design Lab
+# AntLing Design Lab
 
 The web interface runs on Spark 2 (GX10) with pinned Ming Image Design and Design-Layer checkpoints. It is a single-user, local tool. The Spark binds port 8765 to its own loopback address; an SSH tunnel makes it available on your Mac.
 
