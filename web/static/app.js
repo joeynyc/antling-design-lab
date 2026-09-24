@@ -22,6 +22,7 @@ const state = {
   job: null,
   layerImages: [],
   visible: [],
+  designResult: null,
   pollHandle: null,
 };
 
@@ -267,7 +268,6 @@ async function loadLayerImages(urls) {
 
 function renderResults() {
   const list = byId("result-list");
-  list.replaceChildren();
   const job = state.job;
   byId("result-actions").hidden = state.mode !== "layers" || job?.status !== "done";
   byId("design-actions").hidden = state.mode !== "design" || job?.status !== "done";
@@ -279,21 +279,25 @@ function renderResults() {
   }
   if (state.mode === "design" && job?.status === "done") {
     byId("download-design").href = job.design_url;
-    const card = makeElement("div", "design-result");
-    const thumbnail = makeElement("img");
-    thumbnail.src = job.design_url;
-    thumbnail.alt = "Generated design thumbnail";
-    card.append(thumbnail, makeElement("p", "", job.design_prompt));
-    if (job.enhancement === "codex") {
-      const link = makeElement("a", "", "View structured prompt ↗");
-      link.href = `/api/jobs/${job.id}/assets/manifest.json`;
-      link.target = "_blank";
-      link.rel = "noopener";
-      card.append(link);
+    if (state.designResult?.id !== job.id) {
+      const card = makeElement("div", "design-result");
+      const thumbnail = makeElement("img");
+      thumbnail.src = job.design_url;
+      thumbnail.alt = "Generated design thumbnail";
+      card.append(thumbnail, makeElement("p", "", job.design_prompt));
+      if (job.enhancement === "codex") {
+        const link = makeElement("a", "", "View structured prompt ↗");
+        link.href = `/api/jobs/${job.id}/assets/manifest.json`;
+        link.target = "_blank";
+        link.rel = "noopener";
+        card.append(link);
+      }
+      state.designResult = {id: job.id, card};
     }
-    list.append(card);
+    if (list.firstElementChild !== state.designResult.card) list.replaceChildren(state.designResult.card);
     return;
   }
+  list.replaceChildren();
   if (job?.status !== "done") {
     const placeholder = makeElement("div", "result-placeholder");
     placeholder.append(makeElement("span", "", "▧"), makeElement("p", "", state.mode === "design" ? "No design generated yet" : "Nothing separated yet"));
