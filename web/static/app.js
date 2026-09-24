@@ -18,6 +18,7 @@ const state = {
   resolution: 1024,
   view: "input",
   zoom: "fit",
+  previewSize: null,
   job: null,
   layerImages: [],
   visible: [],
@@ -135,6 +136,21 @@ function setView(view) {
   renderPreview();
 }
 
+function sizeArtworkFrame(width, height) {
+  const frame = byId("artwork-frame");
+  frame.style.aspectRatio = `${width} / ${height}`;
+  if (state.zoom !== "fit") {
+    frame.style.width = `${width * Number(state.zoom)}px`;
+    return;
+  }
+  const viewport = byId("canvas-viewport");
+  const style = getComputedStyle(viewport);
+  const availableWidth = viewport.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const availableHeight = viewport.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+  const fittedWidth = Math.min(width, availableWidth, availableHeight * width / height);
+  frame.style.width = `${Math.max(1, Math.floor(fittedWidth))}px`;
+}
+
 function renderPreview() {
   const job = state.job;
   const finished = job?.status === "done";
@@ -150,6 +166,7 @@ function renderPreview() {
   byId("canvas-empty").hidden = !empty;
   byId("artwork-frame").hidden = empty;
   if (empty) {
+    state.previewSize = null;
     byId("split-control").hidden = true;
     byId("canvas-caption").textContent = designMode ? "Generated design will appear here" : "RGBA raster layers · text remains pixels";
     byId("metric-size").textContent = "—";
@@ -163,8 +180,8 @@ function renderPreview() {
   const outputSize = designMode ? job?.output_size : finished ? job.metrics.output_size : state.inputSize || job?.input_size;
   const width = outputSize?.[0] || 1024;
   const height = outputSize?.[1] || 1024;
-  frame.style.aspectRatio = `${width} / ${height}`;
-  frame.style.width = state.zoom === "fit" ? `min(100%, ${width}px)` : `${width * Number(state.zoom)}px`;
+  state.previewSize = [width, height];
+  sizeArtworkFrame(width, height);
   image.hidden = !designMode && (state.view === "layers" || state.view === "split");
   canvas.hidden = designMode || state.view !== "layers";
   split.hidden = designMode || state.view !== "split";
@@ -630,5 +647,8 @@ renderPlan();
 attachEvents();
 updateHealth();
 restoreRecentJob();
+new ResizeObserver(() => {
+  if (state.zoom === "fit" && state.previewSize) sizeArtworkFrame(...state.previewSize);
+}).observe(byId("canvas-viewport"));
 setInterval(updateHealth, 10000);
 setInterval(updateClock, 1000);
