@@ -142,20 +142,20 @@ function setView(view) {
   renderPreview();
 }
 
-function setArtworkImage(source, alt) {
-  const image = byId("artwork-image");
+function setArtworkImage(image, source, alt) {
   image.alt = alt;
+  const reveal = () => {
+    const active = image.id === "design-image" ? state.mode === "design" :
+      state.mode === "layers" && !["layers", "split"].includes(state.view);
+    if (image.getAttribute("src") === source && active) image.hidden = false;
+  };
   if (image.getAttribute("src") !== source) {
     image.hidden = true;
-    image.onload = () => {
-      if (image.getAttribute("src") === source &&
-          (state.mode === "design" || !["layers", "split"].includes(state.view))) {
-        image.hidden = false;
-      }
-    };
+    image.onload = reveal;
     image.src = source;
   } else {
     image.hidden = !(image.complete && image.naturalWidth > 0);
+    if (image.hidden) image.onload = reveal;
   }
 }
 
@@ -198,6 +198,7 @@ function renderPreview() {
 
   const frame = byId("artwork-frame");
   const image = byId("artwork-image");
+  const designImage = byId("design-image");
   const canvas = byId("layer-canvas");
   const split = byId("split-stack");
   const outputSize = designMode ? job?.output_size : finished ? job.metrics.output_size : state.inputSize || job?.input_size;
@@ -205,22 +206,23 @@ function renderPreview() {
   const height = outputSize?.[1] || 1024;
   state.previewSize = [width, height];
   sizeArtworkFrame(width, height);
-  image.hidden = !designMode && (state.view === "layers" || state.view === "split");
+  image.hidden = designMode || state.view === "layers" || state.view === "split";
+  designImage.hidden = !designMode;
   canvas.hidden = designMode || state.view !== "layers";
   split.hidden = designMode || state.view !== "split";
   byId("split-control").hidden = designMode || state.view !== "split";
 
   if (designMode) {
-    setArtworkImage(source, "Generated design");
+    setArtworkImage(designImage, source, "Generated design");
     byId("canvas-caption").textContent = "Generated design · ready to download or split";
   } else if (state.view === "input") {
-    setArtworkImage(source, "Flattened input design");
+    setArtworkImage(image, source, "Flattened input design");
     byId("canvas-caption").textContent = "Original flattened design";
   } else if (state.view === "recomposed") {
-    setArtworkImage(job.recomposed_url, "Recomposed design from generated layers");
+    setArtworkImage(image, job.recomposed_url, "Recomposed design from generated layers");
     byId("canvas-caption").textContent = "Generated layers recomposed back to front";
   } else if (state.view === "difference") {
-    setArtworkImage(job.difference_url, "Amplified pixel difference between input and recomposition");
+    setArtworkImage(image, job.difference_url, "Amplified pixel difference between input and recomposition");
     byId("canvas-caption").textContent = "Pixel difference amplified 8× for visibility";
   } else if (state.view === "split") {
     byId("split-before").src = job.input_url;
@@ -549,7 +551,6 @@ async function submitDesignJob(event) {
 
 function setMode(mode) {
   if (mode !== "design" && mode !== "layers") return;
-  if (mode !== state.mode) byId("artwork-image").removeAttribute("src");
   state.mode = mode;
   state.job = state.jobs[mode];
   state.view = mode === "design" ? "input" : state.job?.status === "done" ? "recomposed" : "input";
@@ -641,6 +642,11 @@ async function restoreRecentJob() {
     }
     const designJob = state.jobs.design;
     if (designJob) {
+      if (designJob.status === "done" && designJob.design_url) {
+        const designImage = byId("design-image");
+        designImage.src = designJob.design_url;
+        if (designImage.decode) designImage.decode().catch(() => {});
+      }
       byId("design-prompt").value = designJob.design_prompt;
       byId("design-seed-input").value = String(designJob.seed);
       state.designResolution = designJob.resolution;
