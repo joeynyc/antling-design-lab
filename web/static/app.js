@@ -413,14 +413,22 @@ function updateClock() {
   byId("job-clock").textContent = `${label}: ${secondsLabel(seconds)}`;
 }
 
-function showError(message) {
+function showError(message, stage = "Check your input") {
   const card = byId("job-card");
   card.className = "job-card error";
-  byId("job-stage").textContent = "Check your input";
+  byId("job-stage").textContent = stage;
   byId("job-message").textContent = message;
   byId("job-clock").textContent = "";
   byId("job-breakdown").textContent = "";
   byId("metric-status").textContent = "Needs attention";
+}
+
+function showSubmitError(error) {
+  if (error instanceof TypeError) {
+    showError("Could not reach Spark 2. The Mac tunnel may have disconnected. Your input is still here; try again.", "Connection lost");
+  } else {
+    showError(error.message);
+  }
 }
 
 async function pollJob() {
@@ -494,7 +502,7 @@ async function submitJob(event) {
     startPolling();
   } catch (error) {
     byId("generate-button").disabled = false;
-    showError(error.message);
+    showSubmitError(error);
   }
 }
 
@@ -509,6 +517,8 @@ async function submitDesignJob(event) {
   data.append("seed", String(seed));
   byId("generate-design-button").disabled = true;
   try {
+    const labResponse = await fetch("/api/health", {cache: "no-store"});
+    if (!labResponse.ok) throw new Error("The Lab server is not ready. Try again shortly.");
     if (byId("enhance-prompt").checked) {
       const rewriteStarted = performance.now();
       byId("job-stage").textContent = "Expanding prompt with Codex";
@@ -549,7 +559,7 @@ async function submitDesignJob(event) {
     startPolling();
   } catch (error) {
     byId("generate-design-button").disabled = false;
-    showError(error.message);
+    showSubmitError(error);
   }
 }
 

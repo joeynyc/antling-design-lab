@@ -11,13 +11,19 @@ docker build -t ming-image-layer:gx10 -f Dockerfile.gx10 .
 bash scripts/run_web_gx10.sh
 ```
 
-In a separate terminal on the Mac:
+On the Mac, install the reconnecting SSH tunnel once:
+
+```bash
+bash scripts/install_web_tunnel_macos.sh
+```
+
+For a temporary tunnel instead, run this in a separate terminal:
 
 ```bash
 ssh -N -L 127.0.0.1:8765:127.0.0.1:8765 gx10
 ```
 
-Open <http://127.0.0.1:8765/>. Leave the tunnel running while using the tool. Stop the web container with `docker stop ming-layer-web` on Spark 2. The container expects `upstream/`, `model/`, and `design-model/` in the project directory; see [the GX10 setup](gx10-smoke.md) and [checkpoint coexistence notes](gx10-coexist.md) for pinned revisions.
+Open <http://127.0.0.1:8765/>. The installed tunnel reconnects after a connection drop or Mac login; a temporary tunnel needs its terminal left open. Stop the web container with `docker stop ming-layer-web` on Spark 2. The container expects `upstream/`, `model/`, and `design-model/` in the project directory; see [the GX10 setup](gx10-smoke.md) and [checkpoint coexistence notes](gx10-coexist.md) for pinned revisions.
 
 ## Use
 
