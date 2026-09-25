@@ -26,7 +26,7 @@ SAMPLE = {
 class PromptProviderTests(unittest.TestCase):
     def test_discovery_only_lists_configured_models_and_never_keys(self):
         with patch.dict(os.environ, {"ANTLING_OPENAI_API_KEY": "private-test-key", "ANTLING_OPENAI_MODEL": "chosen-model", "ANTLING_ANTHROPIC_MODEL": "no-key"}, clear=True):
-            body = TestClient(server.app).get("/api/prompt-providers").json()
+            body = TestClient(server.app, base_url="http://127.0.0.1").get("/api/prompt-providers").json()
         self.assertEqual([entry["id"] for entry in body["providers"]], ["openai"])
         self.assertNotIn("private-test-key", json.dumps(body))
 
@@ -45,7 +45,8 @@ class PromptProviderTests(unittest.TestCase):
                 if provider == "compatible":
                     env["ANTLING_COMPAT_BASE_URL"] = "https://example.com/v1"
                 fake_response = Mock()
-                fake_response.json.return_value = body
+                fake_response.status_code = 200
+                fake_response.iter_content.return_value = [json.dumps(body).encode()]
                 fake_requests = SimpleNamespace(post=Mock(return_value=fake_response), RequestException=RuntimeError)
                 with patch.dict(os.environ, env, clear=True), patch.dict(sys.modules, {"requests": fake_requests}):
                     result, model = prompting.expand_prompt(provider, "An editorial product scene")
@@ -55,6 +56,29 @@ class PromptProviderTests(unittest.TestCase):
                 self.assertNotIn("private-test-key", json.dumps(call.kwargs["json"]))
                 self.assertEqual(call.kwargs["headers"].get("Authorization", call.kwargs["headers"].get("x-api-key")), "Bearer private-test-key" if provider != "anthropic" else "private-test-key")
 
+    def test_redirects_and_large_responses_are_rejected_and_closed(self):
+        for status, chunks, message in [(302, [], "redirects"), (200, [b"x" * (1024 * 1024 + 1)], "size limit")]:
+            with self.subTest(status=status):
+                response = Mock(status_code=status)
+                response.iter_content.return_value = chunks
+                request = SimpleNamespace(post=Mock(return_value=response), RequestException=RuntimeError)
+                with patch.dict(os.environ, {"ANTLING_ANTHROPIC_MODEL": "test", "ANTLING_ANTHROPIC_API_KEY": "secret"}, clear=True), patch.dict(sys.modules, {"requests": request}):
+                    with self.assertRaisesRegex(ValueError, message):
+                        prompting.expand_prompt("anthropic", "A product image")
+                self.assertFalse(request.post.call_args.kwargs["allow_redirects"])
+                response.close.assert_called_once()
+
+    def test_provider_error_never_returns_sensitive_response(self):
+        response = Mock(status_code=401)
+        response.raise_for_status.side_effect = RuntimeError("private prompt and secret key")
+        request = SimpleNamespace(post=Mock(return_value=response), RequestException=RuntimeError)
+        with patch.dict(os.environ, {"ANTLING_OPENAI_MODEL": "test", "ANTLING_OPENAI_API_KEY": "secret"}, clear=True), patch.dict(sys.modules, {"requests": request}):
+            with self.assertRaises(ValueError) as caught:
+                prompting.expand_prompt("openai", "A product image")
+        self.assertNotIn("secret", str(caught.exception))
+        self.assertNotIn("private prompt", str(caught.exception))
+        response.close.assert_called_once()
+
     def test_http_custom_key_is_rejected_before_network_call(self):
         with patch.dict(os.environ, {"ANTLING_COMPAT_MODEL": "local-model", "ANTLING_COMPAT_API_KEY": "secret", "ANTLING_COMPAT_BASE_URL": "http://example.com/v1"}, clear=True):
             with self.assertRaisesRegex(ValueError, "HTTPS"):
@@ -62,7 +86,7 @@ class PromptProviderTests(unittest.TestCase):
         self.assertEqual(prompting._compatible_url("http://host.docker.internal:11434/v1", ""), "http://host.docker.internal:11434/v1/chat/completions")
 
     def test_api_rejects_unconfigured_provider_and_invalid_prompt(self):
-        client = TestClient(server.app)
+        client = TestClient(server.app, base_url="http://127.0.0.1")
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(client.post("/api/prompts/expand", json={"provider": "openai", "prompt": "Draw a poster"}).status_code, 422)
         with patch.object(server, "expand_prompt", return_value=(SAMPLE, "chosen-model")):
@@ -73,7 +97,7 @@ class PromptProviderTests(unittest.TestCase):
     def test_non_codex_expansion_preserves_original_job_prompt(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch.object(server, "JOBS_DIR", Path(directory)), patch.object(server.runtime, "add_job") as add_job:
-                response = TestClient(server.app).post("/api/design-jobs", data={
+                response = TestClient(server.app, base_url="http://127.0.0.1").post("/api/design-jobs", data={
                     "prompt": json.dumps(SAMPLE), "source_prompt": "A navy poster with a vase",
                     "enhancement": "anthropic", "rewrite_seconds": "3.2",
                 })

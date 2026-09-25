@@ -28,7 +28,7 @@ class FinishProjectTests(unittest.TestCase):
         self.patch_job.start()
         self.addCleanup(self.patch_root.stop)
         self.addCleanup(self.patch_job.stop)
-        self.client = TestClient(server.app)
+        self.client = TestClient(server.app, base_url="http://127.0.0.1")
 
     def document(self):
         return {
@@ -47,7 +47,7 @@ class FinishProjectTests(unittest.TestCase):
         project["elements"][0]["text"] = "A real headline"
         updated = self.client.put(f"/api/projects/{project['id']}", json=project)
         self.assertEqual(updated.status_code, 200, updated.text)
-        self.assertEqual(TestClient(server.app).get(f"/api/projects/{project['id']}").json()["elements"][0]["text"], "A real headline")
+        self.assertEqual(TestClient(server.app, base_url="http://127.0.0.1").get(f"/api/projects/{project['id']}").json()["elements"][0]["text"], "A real headline")
 
     def test_invalid_source_and_unsafe_editor_data_are_rejected(self):
         bad = self.document()
@@ -69,7 +69,7 @@ class FinishProjectTests(unittest.TestCase):
         }]
         created = self.client.post("/api/projects", json=document)
         self.assertEqual(created.status_code, 201, created.text)
-        restored = TestClient(server.app).get(f"/api/projects/{created.json()['id']}").json()
+        restored = TestClient(server.app, base_url="http://127.0.0.1").get(f"/api/projects/{created.json()['id']}").json()
         self.assertEqual(restored["background"], "solid")
         self.assertEqual(restored["elements"][0]["erase"][0]["points"][1], [0.04, 0.03])
 

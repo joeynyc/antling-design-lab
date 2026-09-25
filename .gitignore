@@ -35,3 +35,6 @@ upstream/
 .cache/
 jobs/
 .context/
+
+# Personal demo is kept locally, not distributed with the app.
+/demos/

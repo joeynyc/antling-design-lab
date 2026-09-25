@@ -42,7 +42,7 @@ class SourceCutoutTests(unittest.TestCase):
                 patch.object(server.runtime, "get_job", return_value=job),
             ):
                 self.assertIn("source_zip_url", server.public_job(job))
-                response = TestClient(server.app).get(
+                response = TestClient(server.app, base_url="http://127.0.0.1").get(
                     f"/api/jobs/{job_id}/assets/source-cutouts.zip"
                 )
                 self.assertEqual(response.status_code, 200)

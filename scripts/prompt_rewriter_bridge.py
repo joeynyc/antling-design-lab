@@ -5,20 +5,21 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-import sys
 sys.path.insert(0, str(ROOT))
 from web.prompting import expansion_request, validate_prompt
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("MING_REWRITER_PORT", "8766"))
 ALLOWED_ORIGIN = "http://127.0.0.1:8765"
-CODEX = os.environ.get("MING_CODEX_BIN", str(Path.home() / ".local/bin/codex"))
+CODEX = os.environ.get("MING_CODEX_BIN") or shutil.which("codex") or str(Path.home() / ".local/bin/codex")
 MODEL = os.environ.get("MING_REWRITER_MODEL", "gpt-6-luna")
 BUSY = threading.Lock()
 
@@ -95,7 +96,11 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 BUSY.release()
             self._respond(200, {"prompt": json.dumps(structured, ensure_ascii=False), "model": MODEL})
-        except (ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        except subprocess.TimeoutExpired:
+            self._respond(504, {"error": "Codex prompt expansion timed out"})
+        except OSError:
+            self._respond(503, {"error": "Codex CLI is unavailable. Check MING_CODEX_BIN and your installation."})
+        except (ValueError, RuntimeError) as exc:
             self._respond(422, {"error": str(exc)})
 
     def log_message(self, format: str, *args: object) -> None:

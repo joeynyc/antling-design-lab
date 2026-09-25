@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageChops, ImageOps, ImageStat, UnidentifiedImageError
 from web.prompting import configured_providers, expand_prompt
+from web.security import LocalAccessMiddleware
 
 WEB_DIR = Path(__file__).resolve().parent
 UPSTREAM_DIR = Path(os.environ.get("MING_UPSTREAM_DIR", "/upstream"))
@@ -54,6 +55,7 @@ MAX_IMAGE_PIXELS = 16_000_000
 MAX_PENDING_JOBS = 3
 JOB_ID_PATTERN = re.compile(r"[a-f0-9]{32}\Z")
 SOURCE_EXPORT_LOCK = threading.Lock()
+PROMPT_EXPANSION_LOCK = threading.Lock()
 
 
 def now_iso() -> str:
@@ -527,6 +529,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="AntLing Design Lab", lifespan=lifespan)
+app.add_middleware(LocalAccessMiddleware)
 app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 
 
@@ -754,7 +757,7 @@ async def create_job(
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "Image exceeds the 20 MB limit")
     try:
-        with Image.open(io.BytesIO(data)) as opened:
+        with Image.open(io.BytesIO(data), formats=["PNG", "JPEG", "WEBP"]) as opened:
             if opened.format not in ("PNG", "JPEG", "WEBP"):
                 raise HTTPException(415, "Use a PNG, JPEG, or WebP image")
             if opened.width * opened.height > MAX_IMAGE_PIXELS:
@@ -805,10 +808,14 @@ def expand_design_prompt(payload: dict):
     provider = payload.get("provider")
     if not isinstance(prompt, str) or not isinstance(provider, str):
         raise HTTPException(422, "A prompt and configured provider are required")
+    if not PROMPT_EXPANSION_LOCK.acquire(blocking=False):
+        raise HTTPException(429, "Another prompt is being expanded. Try again shortly.")
     try:
         structured, model = expand_prompt(provider, prompt.strip())
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    finally:
+        PROMPT_EXPANSION_LOCK.release()
     return {"prompt": json.dumps(structured, ensure_ascii=False), "provider": provider, "model": model}
 
 
@@ -913,7 +920,7 @@ async def skill_generate_design(payload: dict):
         raise HTTPException(422, "Seed must be an integer") from exc
     created = create_design_job(
         prompt=str(payload.get("prompt", "")), resolution=resolution, seed=seed,
-        steps=12, source_prompt=None, enhancement="none"
+        steps=12, source_prompt=None, enhancement="none", rewrite_seconds=None
     )
     job = await wait_for_skill_job(created["id"])
     with Image.open(JOBS_DIR / job["id"] / "design.png") as image:

@@ -109,9 +109,20 @@ def expand_prompt(provider: str, user_prompt: str) -> tuple[dict, str]:
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         payload = {"model": model, "messages": [{"role": "user", "content": instruction}]}
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=(5, 120))
-        response.raise_for_status()
-        body = response.json()
+        response = requests.post(url, headers=headers, json=payload, timeout=(5, 120), allow_redirects=False, stream=True)
+        try:
+            if 300 <= response.status_code < 400:
+                raise ValueError("Provider redirects are not allowed. Configure the final API URL.")
+            response.raise_for_status()
+            chunks, size = [], 0
+            for chunk in response.iter_content(65536):
+                size += len(chunk)
+                if size > 1024 * 1024:
+                    raise ValueError("The provider response exceeded the size limit")
+                chunks.append(chunk)
+            body = json.loads(b"".join(chunks))
+        finally:
+            response.close()
         if provider == "openai":
             answer = "".join(part.get("text", "") for item in body.get("output", []) for part in item.get("content", []) if part.get("type") == "output_text")
         elif provider == "anthropic":
@@ -124,6 +135,6 @@ def expand_prompt(provider: str, user_prompt: str) -> tuple[dict, str]:
         if answer.startswith("```"):
             answer = re.sub(r"^```(?:json)?\s*|\s*```$", "", answer, flags=re.IGNORECASE).strip()
         return validate_prompt(json.loads(answer)), model
-    except (requests.RequestException, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+    except (requests.RequestException, KeyError, IndexError, TypeError, AttributeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         # Provider response bodies may include credentials or private prompt text.
         raise ValueError("Prompt expansion failed. Check the provider key, model, and endpoint, then try again.") from exc

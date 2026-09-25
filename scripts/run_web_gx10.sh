@@ -30,4 +30,4 @@ docker run --rm --name ming-layer-web --gpus all --ipc=host \
   -v "$project_root/jobs:/jobs" \
   -w /app \
   ming-image-layer:gx10 \
-  python -m uvicorn web.server:app --host 0.0.0.0 --port 8765 --workers 1
+  python -m uvicorn web.server:app --host 0.0.0.0 --port 8765 --workers 1 --no-proxy-headers
