@@ -7,8 +7,8 @@ Run the backend on an NVIDIA DGX Spark / GX10 with GPU-enabled Docker. The teste
 Run these commands in a terminal **on the Spark**:
 
 ```bash
-git clone https://github.com/joeynyc/ming-image-design-layer.git
-cd ming-image-design-layer
+git clone https://github.com/joeynyc/antling-design-lab.git
+cd antling-design-lab
 git clone https://github.com/inclusionAI/Ming-Image.git upstream
 git -C upstream checkout 62c6072e1ff15af83f7c4963a0a1954c1424e80e
 python3 -m venv .venv
