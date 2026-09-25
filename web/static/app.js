@@ -279,6 +279,7 @@ function renderResults() {
   }
   if (state.mode === "design" && job?.status === "done") {
     byId("download-design").href = job.design_url;
+    byId("finish-design").href = `/finish?job=${job.id}`;
     if (state.designResult?.id !== job.id) {
       const card = makeElement("div", "design-result");
       const thumbnail = makeElement("img");
@@ -305,6 +306,7 @@ function renderResults() {
     return;
   }
   byId("download-zip").href = job.zip_url;
+  byId("finish-layers").href = `/finish?job=${job.id}`;
   job.layers.forEach((description, index) => {
     const card = makeElement("div", "result-card");
     card.classList.toggle("hidden-layer", !state.visible[index]);

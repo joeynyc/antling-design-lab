@@ -33,6 +33,7 @@ UPSTREAM_DIR = Path(os.environ.get("MING_UPSTREAM_DIR", "/upstream"))
 LAYER_MODEL_DIR = Path(os.environ.get("MING_MODEL_DIR", "/model"))
 DESIGN_MODEL_DIR = Path(os.environ.get("MING_DESIGN_MODEL_DIR", "/design-model"))
 JOBS_DIR = Path(os.environ.get("MING_JOBS_DIR", "/jobs"))
+PROJECTS_DIR = JOBS_DIR / "projects"
 LAYER_MODEL_REVISION = os.environ.get(
     "MING_MODEL_REVISION", "650448783505b103af305ce347bf60d8889e655a"
 )
@@ -531,6 +532,167 @@ app.mount("/static", StaticFiles(directory=WEB_DIR / "static"), name="static")
 @app.get("/")
 def index():
     return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/finish")
+def finish_page():
+    return FileResponse(WEB_DIR / "finish.html")
+
+
+def validate_project(payload: dict, existing: dict | None = None) -> dict:
+    """Accept only bounded editor data; saved projects never contain image bytes."""
+    if not isinstance(payload, dict):
+        raise HTTPException(422, "Expected a project object")
+    source_id = payload.get("source_job_id")
+    if not isinstance(source_id, str) or not JOB_ID_PATTERN.fullmatch(source_id):
+        raise HTTPException(422, "Choose a completed source job")
+    if existing and source_id != existing["source_job_id"]:
+        raise HTTPException(422, "A project's source cannot be changed")
+    job = runtime.get_job(source_id)
+    if job.get("status") != "done" or job.get("kind", "layers") not in {"design", "layers"}:
+        raise HTTPException(422, "Choose a completed design or layer job")
+    title = payload.get("title")
+    if not isinstance(title, str) or not 1 <= len(title.strip()) <= 120:
+        raise HTTPException(422, "Project title must be 1–120 characters")
+    size = payload.get("size")
+    if size not in {"landscape", "square"}:
+        raise HTTPException(422, "Choose landscape or square")
+    background = payload.get("background", "original")
+    background_color = payload.get("background_color", "#16172e")
+    if background not in {"original", "solid"} or not isinstance(background_color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", background_color):
+        raise HTTPException(422, "Invalid background")
+    try:
+        focal_x, focal_y = float(payload.get("focal_x")), float(payload.get("focal_y"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(422, "Invalid image position") from exc
+    if not all(math.isfinite(value) and 0 <= value <= 1 for value in (focal_x, focal_y)):
+        raise HTTPException(422, "Invalid image position")
+    elements = payload.get("elements")
+    if not isinstance(elements, list) or len(elements) > 24:
+        raise HTTPException(422, "A project supports up to 24 elements")
+    clean_elements = []
+    seen = set()
+    for element in elements:
+        if not isinstance(element, dict):
+            raise HTTPException(422, "Invalid element")
+        element_id = element.get("id")
+        if not isinstance(element_id, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,40}", element_id) or element_id in seen:
+            raise HTTPException(422, "Invalid or duplicate element ID")
+        seen.add(element_id)
+        kind = element.get("type")
+        if kind not in {"text", "layer"}:
+            raise HTTPException(422, "Unknown element type")
+        numeric = {}
+        for key, low, high in (("x", -3200, 3200), ("y", -3200, 3200), ("width", 1, 6400), ("height", 1, 6400)):
+            if key in element or key in {"x", "y"}:
+                try:
+                    value = float(element[key])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise HTTPException(422, f"Invalid {key}") from exc
+                if not math.isfinite(value) or not low <= value <= high:
+                    raise HTTPException(422, f"Invalid {key}")
+                numeric[key] = value
+        clean = {"id": element_id, "type": kind, **numeric}
+        if kind == "text":
+            copy = element.get("text")
+            color = element.get("color")
+            if not isinstance(copy, str) or len(copy) > 500 or not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                raise HTTPException(422, "Invalid text or color")
+            try:
+                font_size = int(element.get("font_size"))
+                weight = int(element.get("weight"))
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(422, "Invalid font setting") from exc
+            if not 12 <= font_size <= 300 or weight not in {400, 500, 600, 700, 800, 900}:
+                raise HTTPException(422, "Invalid font setting")
+            clean.update(text=copy, color=color, font_size=font_size, weight=weight)
+        else:
+            if job.get("kind", "layers") != "layers":
+                raise HTTPException(422, "This source has no layers")
+            index = element.get("layer_index")
+            if not isinstance(index, int) or not 0 <= index < len(job["layers"]):
+                raise HTTPException(422, "Invalid layer index")
+            strokes = element.get("erase", [])
+            if not isinstance(strokes, list) or len(strokes) > 100:
+                raise HTTPException(422, "Too many cleanup strokes")
+            cleaned_strokes = []
+            for stroke in strokes:
+                if not isinstance(stroke, dict) or not isinstance(stroke.get("points"), list) or not 1 <= len(stroke["points"]) <= 500:
+                    raise HTTPException(422, "Invalid cleanup stroke")
+                try:
+                    radius = float(stroke.get("radius"))
+                    points = [[float(x), float(y)] for x, y in stroke["points"]]
+                except (TypeError, ValueError) as exc:
+                    raise HTTPException(422, "Invalid cleanup stroke") from exc
+                if not math.isfinite(radius) or not 1 <= radius <= 200 or any(not math.isfinite(v) or not 0 <= v <= 1 for point in points for v in point):
+                    raise HTTPException(422, "Invalid cleanup stroke")
+                cleaned_strokes.append({"radius": radius, "points": points})
+            clean.update(layer_index=index, erase=cleaned_strokes)
+        clean_elements.append(clean)
+    return {"title": title.strip(), "source_job_id": source_id, "size": size,
+            "background": background, "background_color": background_color,
+            "focal_x": focal_x, "focal_y": focal_y, "elements": clean_elements}
+
+
+def project_path(project_id: str) -> Path:
+    if not JOB_ID_PATTERN.fullmatch(project_id):
+        raise HTTPException(404, "Project not found")
+    return PROJECTS_DIR / f"{project_id}.json"
+
+
+def read_project(project_id: str) -> dict:
+    path = project_path(project_id)
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise HTTPException(404, "Project not found") from exc
+
+
+def write_project(project: dict) -> None:
+    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    temporary = PROJECTS_DIR / f".{project['id']}-{uuid.uuid4().hex}.tmp"
+    try:
+        temporary.write_text(json.dumps(project, ensure_ascii=False, separators=(",", ":")))
+        os.replace(temporary, project_path(project["id"]))
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+@app.get("/api/projects")
+def list_projects():
+    if not PROJECTS_DIR.exists():
+        return []
+    projects = []
+    for path in PROJECTS_DIR.glob("*.json"):
+        try:
+            item = json.loads(path.read_text())
+            projects.append({key: item[key] for key in ("id", "title", "source_job_id", "size", "updated_at")})
+        except (OSError, ValueError, KeyError):
+            continue
+    return sorted(projects, key=lambda item: item["updated_at"], reverse=True)[:100]
+
+
+@app.post("/api/projects", status_code=201)
+def create_project(payload: dict):
+    document = validate_project(payload)
+    timestamp = now_iso()
+    project = {"id": uuid.uuid4().hex, "created_at": timestamp, "updated_at": timestamp, **document}
+    write_project(project)
+    return project
+
+
+@app.get("/api/projects/{project_id}")
+def get_project(project_id: str):
+    return read_project(project_id)
+
+
+@app.put("/api/projects/{project_id}")
+def update_project(project_id: str, payload: dict):
+    previous = read_project(project_id)
+    document = validate_project(payload, previous)
+    project = {**previous, **document, "updated_at": now_iso()}
+    write_project(project)
+    return project
 
 
 @app.get("/api/health")

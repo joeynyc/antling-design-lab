@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Finish · AntLing Design Lab</title>
+  <link rel="stylesheet" href="/static/style.css?v=9" />
+  <link rel="stylesheet" href="/static/finish.css?v=3" />
+  <script src="/static/finish.js?v=4" defer></script>
+</head>
+<body>
+  <div class="finish-shell">
+    <header class="topbar finish-topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><div><strong>AntLing <span>Design Lab</span></strong><small>FINISH / Create an asset you can publish</small></div></div>
+      <div class="finish-top-actions"><a class="ghost-button" href="/">← Generate &amp; Split</a><span id="save-state" aria-live="polite">Ready</span><button id="save-button" class="ghost-button" type="button">Save project</button><button id="export-button" class="download-button" type="button">Export PNG ↓</button></div>
+    </header>
+    <main class="finish-workspace">
+      <aside class="finish-left">
+        <span class="eyebrow">01 / SOURCE</span><h1>Make it yours</h1>
+        <p class="finish-intro">Start from a saved design or split. Compose, add real text, and export without another model run.</p>
+        <label for="source-select">Saved model output</label><select id="source-select"><option value="">Select a completed job</option></select>
+        <label for="project-select">Reopen a project</label><select id="project-select"><option value="">New project</option></select>
+        <label for="project-title">Project name</label><input id="project-title" maxlength="120" value="Untitled graphic" />
+        <div class="section-header"><div><span class="eyebrow">02 / CANVAS</span><h2>Format &amp; background</h2></div></div>
+        <div class="finish-toggle"><button type="button" data-size="landscape" class="active">X landscape<br><small>1600 × 900</small></button><button type="button" data-size="square">Square<br><small>1080 × 1080</small></button></div>
+        <label for="background-select">Background</label><select id="background-select"><option value="original">Original image</option><option value="solid">Solid color</option></select>
+        <div id="background-color-wrap" hidden><label for="background-color">Color</label><input id="background-color" type="color" value="#16172e" /></div>
+        <div id="focal-controls"><label for="focal-x">Image position · left / right</label><input id="focal-x" type="range" min="0" max="100" value="50" /><label for="focal-y">Image position · up / down</label><input id="focal-y" type="range" min="0" max="100" value="50" /></div>
+        <div class="section-header"><div><span class="eyebrow">03 / ELEMENTS</span><h2>Add &amp; arrange</h2></div></div>
+        <button id="add-text" class="finish-primary" type="button">+ Add editable text</button>
+        <div id="layer-source" hidden><p class="finish-help">These are raster model layers, up to 1024 px. Move or resize them on a solid background for a new composition; inspect edges before exporting.</p><div id="available-layers"></div></div>
+        <div id="element-list" class="element-list"></div>
+      </aside>
+      <section class="finish-center" aria-label="Editor canvas">
+        <div class="finish-canvas-header"><div><span class="eyebrow">WORKSPACE</span><h2>Final asset</h2></div><div class="finish-canvas-meta"><span id="canvas-size">1600 × 900</span><label for="canvas-zoom">Zoom</label><select id="canvas-zoom"><option value="fit">Fit</option><option value="1">100%</option><option value="2">200%</option></select></div></div>
+        <div class="finish-stage" id="finish-stage"><div class="finish-empty" id="finish-empty">Choose a saved design or split to begin.</div><canvas id="finish-canvas" width="1600" height="900" aria-label="Final asset canvas" hidden></canvas></div>
+        <div class="finish-caption">Drag an element to place it. The downloaded PNG uses the full canvas resolution, independent of browser zoom.</div>
+      </section>
+      <aside class="finish-right"><span class="eyebrow">04 / INSPECT</span><h2 id="inspect-heading">Select an element</h2><div id="inspect-empty">Select text or a layer on the canvas or in the list.</div>
+        <div id="text-inspector" hidden><label for="text-copy">Text</label><textarea id="text-copy" rows="5" maxlength="500"></textarea><div class="finish-grid"><div><label for="text-size">Size</label><input id="text-size" type="number" min="12" max="300" /></div><div><label for="text-weight">Weight</label><select id="text-weight"><option value="400">Regular</option><option value="600">Semibold</option><option value="700">Bold</option><option value="800">Heavy</option><option value="900">Black</option></select></div></div><label for="text-color">Color</label><input id="text-color" type="color" /><p class="finish-help">This text stays editable when you reopen the project. Model lettering inside the image remains raster.</p></div>
+        <div id="layer-inspector" hidden><p class="finish-help" id="layer-inspector-name"></p><div class="finish-grid"><div><label for="layer-width">Width</label><input id="layer-width" type="number" min="1" max="6400" /></div><div><label for="layer-height">Height</label><input id="layer-height" type="number" min="1" max="6400" /></div></div><button id="edge-mode" type="button" class="ghost-button">Clean edges</button><div id="edge-tools" hidden><p class="finish-help">Brush over unwanted pixels. Use the checker, light, or dark backdrop to inspect halos. Cleanup is saved with this project.</p><label for="edge-backdrop">Inspection backdrop</label><select id="edge-backdrop"><option value="checker">Checker</option><option value="light">Light</option><option value="dark">Dark</option></select><label for="edge-brush">Brush size</label><input id="edge-brush" type="range" min="3" max="80" value="18" /><div class="finish-row"><button id="undo-erase" class="ghost-button" type="button">Undo stroke</button><button id="clear-erase" class="ghost-button" type="button">Reset cleanup</button></div><button id="done-edges" class="finish-primary" type="button">Done cleaning</button></div></div>
+        <div id="element-actions" hidden><div class="finish-row"><button id="element-back" class="ghost-button" type="button">Send back</button><button id="element-front" class="ghost-button" type="button">Bring forward</button></div><button id="element-delete" class="danger-button" type="button">Remove element</button></div>
+        <div class="finish-limit"><strong>What exports</strong><p>One full-size PNG with the original image, your chosen raster layers, and newly typed text. Save the project to keep those elements editable here.</p></div>
+      </aside>
+    </main>
+  </div>
+</body>
+</html>
