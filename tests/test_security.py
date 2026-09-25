@@ -1,5 +1,6 @@
 """Boundary checks for a loopback service that can start GPU and API jobs."""
 
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -57,6 +58,20 @@ class LocalAccessTests(unittest.TestCase):
                 response = self.client.post("/v1/images/generations", json={"prompt": "A red editorial poster"})
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(queue.call_args.args[0]["enhancement"], "none")
+
+    def test_upload_accepts_pixels_and_rejects_disguised_documents(self):
+        data = {"layers": '["Foreground product", "Plain background"]'}
+        pixels = io.BytesIO()
+        Image.new("RGB", (64, 64), "red").save(pixels, format="PNG")
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(server, "JOBS_DIR", Path(directory)), patch.object(server.runtime, "add_job") as queue:
+                response = self.client.post("/api/jobs", data=data, files={"image": ("photo.png", pixels.getvalue(), "image/png")})
+                self.assertEqual(response.status_code, 202)
+                self.assertTrue((Path(directory) / response.json()["id"] / "input.png").is_file())
+                queue.reset_mock()
+                response = self.client.post("/api/jobs", data=data, files={"image": ("photo.png", b"<svg xmlns='http://www.w3.org/2000/svg'/>", "image/png")})
+                self.assertEqual(response.status_code, 415)
+                queue.assert_not_called()
 
     def test_expansion_is_serialized(self):
         with server.PROMPT_EXPANSION_LOCK:

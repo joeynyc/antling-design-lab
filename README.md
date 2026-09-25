@@ -47,4 +47,4 @@ The interface uses plain HTML, CSS, and JavaScript; the server uses FastAPI. The
 
 ## License
 
-[MIT](LICENSE) for the app. Model weights and [upstream inference code](https://github.com/inclusionAI/Ming-Image) are downloaded separately under their own licenses. AntLing Design Lab is an independent project, not an official inclusionAI product.
+[MIT](LICENSE) for the app. The bundled prompt template is from inclusionAI and retains its [MIT notice](resources/LICENSE). Model weights and [upstream inference code](https://github.com/inclusionAI/Ming-Image) are downloaded separately under their own licenses. AntLing Design Lab is an independent project, not an official inclusionAI product.
