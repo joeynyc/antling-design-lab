@@ -1,0 +1,60 @@
+{
+  "design_job": "0e0299c587d4408185cd911cd9b6909f",
+  "layer_job": "1aff5074a9a94be78210b168d48b021d",
+  "host": "Spark 2 DGX Spark GX10",
+  "hero": {
+    "file": "studio-original.png",
+    "size": [
+      2048,
+      2048
+    ]
+  },
+  "layers": {
+    "model_output_size": [
+      1024,
+      1024
+    ],
+    "website_crops": {
+      "monitor": {
+        "file": "layer-monitor.png",
+        "source": "layer_01.png",
+        "bbox": [
+          604,
+          492,
+          983,
+          800
+        ]
+      },
+      "computer": {
+        "file": "layer-computer.png",
+        "source": "layer_02.png",
+        "bbox": [
+          479,
+          660,
+          578,
+          799
+        ]
+      },
+      "desk": {
+        "file": "layer-desk.png",
+        "source": "layer_03.png",
+        "bbox": [
+          355,
+          770,
+          1024,
+          1024
+        ]
+      },
+      "wall": {
+        "file": "layer-wall.png",
+        "source": "layer_04.png",
+        "bbox": [
+          0,
+          0,
+          1024,
+          800
+        ]
+      }
+    }
+  }
+}

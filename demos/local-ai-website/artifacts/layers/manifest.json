@@ -1,0 +1,12 @@
+{
+  "source": "../../assets/studio-original.png",
+  "source_size": [2048, 2048],
+  "size": [1024, 1024],
+  "job_id": "1aff5074a9a94be78210b168d48b021d",
+  "layers": [
+    {"file":"layer_01.png","role":"image","description":"monitor"},
+    {"file":"layer_02.png","role":"image","description":"computer"},
+    {"file":"layer_03.png","role":"image","description":"desk"},
+    {"file":"layer_04.png","role":"background","description":"wall"}
+  ]
+}

@@ -4,6 +4,10 @@ A local interface for [Ming-Image-0.1-Design](https://huggingface.co/inclusionAI
 
 The official [Ling UI Design and Image-to-Editable-PPT agent skills](docs/agent-skills.md) can use these local models through the same Spark 2 web service.
 
+## Working website demo
+
+The [local AI website demo](demos/local-ai-website/README.md) turns a 2048px Design image into a responsive page with live text and a viewer for cropped Design-Layer output. It runs as a separate static site on the Mac while both image models run on Spark 2.
+
 ## Project status
 
 The [official six-layer sample](docs/gx10-smoke.md) completed on a DGX Spark GX10. The [local web tool](docs/web-tool.md) runs both checkpoints on Spark 2 in one workflow. The model weights and generated jobs stay on the device and are ignored by Git.

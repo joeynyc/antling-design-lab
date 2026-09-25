@@ -1,0 +1,104 @@
+{
+  "layers": "demos/local-ai-website/artifacts/layers",
+  "roles": [
+    "image",
+    "background"
+  ],
+  "files": [
+    {
+      "file": "asset_00.png",
+      "source_role": "image",
+      "method": "alpha",
+      "layer": "layer_01.png",
+      "bbox": [
+        604,
+        492,
+        983,
+        800
+      ],
+      "size": "379x308",
+      "canvas": "1024x1024",
+      "aspect_ratio": 1.231,
+      "width_fraction": 0.37,
+      "height_fraction": 0.301,
+      "review": false,
+      "review_reason": null
+    },
+    {
+      "file": "asset_01.png",
+      "source_role": "image",
+      "method": "alpha",
+      "layer": "layer_02.png",
+      "bbox": [
+        479,
+        660,
+        578,
+        799
+      ],
+      "size": "99x139",
+      "canvas": "1024x1024",
+      "aspect_ratio": 0.712,
+      "width_fraction": 0.097,
+      "height_fraction": 0.136,
+      "review": false,
+      "review_reason": null
+    },
+    {
+      "file": "asset_02.png",
+      "source_role": "image",
+      "method": "alpha",
+      "layer": "layer_02.png",
+      "bbox": [
+        604,
+        492,
+        983,
+        799
+      ],
+      "size": "379x307",
+      "canvas": "1024x1024",
+      "aspect_ratio": 1.235,
+      "width_fraction": 0.37,
+      "height_fraction": 0.3,
+      "review": false,
+      "review_reason": null
+    },
+    {
+      "file": "asset_03.png",
+      "source_role": "image",
+      "method": "alpha",
+      "layer": "layer_03.png",
+      "bbox": [
+        355,
+        770,
+        1024,
+        1024
+      ],
+      "size": "669x254",
+      "canvas": "1024x1024",
+      "aspect_ratio": 2.634,
+      "width_fraction": 0.653,
+      "height_fraction": 0.248,
+      "review": true,
+      "review_reason": "wide strip; likely multiple reference slots merged into one alpha component"
+    },
+    {
+      "file": "asset_04.png",
+      "source_role": "background",
+      "method": "alpha",
+      "layer": "layer_04.png",
+      "bbox": [
+        0,
+        0,
+        1024,
+        1024
+      ],
+      "size": "1024x1024",
+      "canvas": "1024x1024",
+      "aspect_ratio": 1.0,
+      "width_fraction": 1.0,
+      "height_fraction": 1.0,
+      "review": false,
+      "review_reason": null
+    }
+  ]
+}
