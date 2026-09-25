@@ -11,29 +11,31 @@ docker build -t ming-image-layer:gx10 -f Dockerfile.gx10 .
 bash scripts/run_web_gx10.sh
 ```
 
-On the Mac, install the reconnecting SSH tunnel once:
+On macOS, install the reconnecting SSH tunnel once (replace the SSH host alias if needed):
 
 ```bash
-bash scripts/install_web_tunnel_macos.sh
+bash scripts/install_web_tunnel_macos.sh YOUR_SPARK_SSH_HOST
 ```
 
 For a temporary tunnel instead, run this in a separate terminal:
 
 ```bash
-ssh -N -L 127.0.0.1:8765:127.0.0.1:8765 gx10
+ssh -N -L 127.0.0.1:8765:127.0.0.1:8765 YOUR_SPARK_SSH_HOST
 ```
 
-Open <http://127.0.0.1:8765/>. The installed tunnel reconnects after a connection drop or Mac login; a temporary tunnel needs its terminal left open. Stop the web container with `docker stop ming-layer-web` on Spark 2. The container expects `upstream/`, `model/`, and `design-model/` in the project directory; see [the GX10 setup](gx10-smoke.md) and [checkpoint coexistence notes](gx10-coexist.md) for pinned revisions.
+Open <http://127.0.0.1:8765/>. The installed tunnel reconnects after a connection drop or Mac login; a temporary tunnel needs its terminal left open. Stop the web container with `docker stop ming-layer-web` on Spark 2. The container expects `upstream/`, `model/`, and `design-model/` in the project directory; follow the [README setup](../README.md#run-on-a-dgx-spark) first. See [the GX10 smoke test](gx10-smoke.md) and [checkpoint coexistence notes](gx10-coexist.md) for measured results.
 
 ## Use
 
-In **Generate design**, enter a plain prompt. **Expand with Codex** is on by default: the Mac helper calls the signed-in Codex CLI with the [official Ming text-to-image rewriter instructions](../resources/t2i_rewriter_system_prompt.txt), validates the structured JSON, and then sends that JSON to Ming. The original prompt remains visible in job history; the full structured prompt is saved in the job manifest. The helper uses the signed-in Codex account and does not store an API key. Select 2048 for the model-card quality setting (about 2 minutes of warm generation in the local test); 1024 is faster. The model may still invent or distort small text, so inspect each result. Download the PNG or choose **Send to Layers** to transfer it directly into the split workspace.
+In **Generate design**, enter a plain prompt and choose **Prompt expansion**. Direct mode sends the prompt unchanged to Ming and needs no text-model account. Any configured OpenAI, Claude, Z.ai, DeepSeek, or compatible endpoint can expand it into a structured layout using the [Ming rewriter instructions](../resources/t2i_rewriter_system_prompt.txt). The server validates the JSON format before image generation. The original prompt remains in job history; the structured prompt is saved in the job manifest. The selected external provider receives your prompt, so use direct mode or a local compatible model when the text must stay on your device. Select 2048 for detailed output or 1024 for speed; inspect lettering because the image model can still distort small text. Download the PNG or choose **Send to Layers**.
 
-On the Mac that opens the Lab, install the helper once with `bash scripts/install_prompt_bridge_macos.sh`. It runs on `127.0.0.1:8766` as a LaunchAgent and accepts browser requests from the Lab at `http://127.0.0.1:8765`. If the helper is unavailable, uncheck **Expand with Codex** to send the prompt directly to Ming. This helper does not run on Spark 2; the image and layer models continue to run there.
+### Optional Codex CLI helper
+
+On a Mac with a signed-in Codex CLI, `bash scripts/install_prompt_bridge_macos.sh` runs a local helper on `127.0.0.1:8766`. When the browser sees it, **Codex CLI on this Mac** appears in the provider dropdown. It uses that signed-in account, not an OpenAI API key. This helper is optional and stays on the Mac; image inference continues on the Spark. If it is unavailable, use direct mode or a Spark-configured provider. The helper currently accepts Lab requests from `http://127.0.0.1:8765`; use the default tunnel address.
 
 In **Split layers**, upload a PNG, JPEG, or WebP design (20 MB and 16 megapixels maximum), or use the transferred design. Write 2–8 layer descriptions in **front-to-back** order, with the background last. Name text exactly where possible. Choose 512 or 1024 working size and a seed, then generate. **1024 is the largest Layer model output**; a 2048 design is resized for inference. Sending a generated design into the split workspace selects 1024 by default, while 512 remains a faster option. Only one inference job runs at once; up to three can wait in the queue. A cold checkpoint load still takes several minutes. The published Layer sample at 1024 took about 16 minutes end to end on GX10; other images may differ.
 
-After generation, inspect the recomposed image, toggle or solo layers, compare input and output with the split view, and download individual RGBA PNGs or a ZIP bundle. Difference is an 8× amplified diagnostic view; its RGB error is a pixel difference against the input, not an editing-quality score. Text remains raster pixels. The status card distinguishes Codex prompt expansion, model loading, generation, and any queue wait when those timings are available. Its **Ming run** time excludes Codex and queue wait.
+After generation, inspect the recomposed image, toggle or solo layers, compare input and output with the split view, and download individual RGBA PNGs or a ZIP bundle. Difference is an 8× amplified diagnostic view; its RGB error is a pixel difference against the input, not an editing-quality score. Text remains raster pixels. The status card distinguishes prompt expansion, model loading, generation, and any queue wait when those timings are available. Its **Ming run** time excludes prompt expansion and queue wait.
 
 Use **Finish this design** or **Finish with layers** to open a completed job in the `/finish` editor. You can also choose a recent completed job or reopen a saved project there. Choose X landscape (1600 × 900) or square (1080 × 1080), position the original image in the crop, or use a solid background. Add editable text and, for split jobs, position and resize transparent model layers. Select a layer and **Clean edges** to inspect it on checker, light, or dark; brush away unwanted pixels, undo a stroke, or reset cleanup. Use canvas zoom to examine details at 100% or 200%. Save projects automatically or with **Save project**, then export a full-size PNG. Saved projects store the source job ID, canvas settings, text, positions, and cleanup strokes under `jobs/projects/`; reopening them does not run either model. Keep the original job assets in `jobs/` so its projects can reopen. Exported PNGs are flattened; edit text and layers by reopening the project in the Lab. Layer pixels are still limited by the model's 1024 px output, and enlarging them can expose soft edges.
 

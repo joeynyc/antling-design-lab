@@ -5,13 +5,13 @@ demo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd "$demo_root/../.." && pwd)"
 python_bin="$(command -v python3)"
 agent_dir="$HOME/Library/LaunchAgents"
-agent_path="$agent_dir/com.joey.antling-local-ai-website.plist"
+agent_path="$agent_dir/ai.antling.local-ai-website-preview.plist"
 mkdir -p "$agent_dir" "$project_root/private"
 cat > "$agent_path" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.joey.antling-local-ai-website</string>
+  <key>Label</key><string>ai.antling.local-ai-website-preview</string>
   <key>ProgramArguments</key><array>
     <string>$python_bin</string>
     <string>-m</string><string>http.server</string>

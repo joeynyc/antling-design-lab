@@ -3,8 +3,13 @@ set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 mkdir -p "$project_root/jobs"
+env_args=()
+if [[ -f "$project_root/.env" ]]; then
+  env_args=(--env-file "$project_root/.env")
+fi
 
 docker run --rm --name ming-layer-web --gpus all --ipc=host \
+  "${env_args[@]}" --add-host=host.docker.internal:host-gateway \
   --ulimit memlock=-1 --ulimit stack=67108864 \
   --user "$(id -u):$(id -g)" \
   -p 127.0.0.1:8765:8765 \
@@ -21,6 +26,7 @@ docker run --rm --name ming-layer-web --gpus all --ipc=host \
   -v "$project_root/model:/model:ro" \
   -v "$project_root/design-model:/design-model:ro" \
   -v "$project_root/web:/app/web:ro" \
+  -v "$project_root/resources:/app/resources:ro" \
   -v "$project_root/jobs:/jobs" \
   -w /app \
   ming-image-layer:gx10 \

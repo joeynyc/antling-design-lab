@@ -1,6 +1,6 @@
 # Local Ming agent skills
 
-The published `ling-ui-design` and `image-to-editable-ppt` skills from [inclusionAI/ling-cookbook](https://github.com/inclusionAI/ling-cookbook/tree/main/resources/recommended-skills) are installed under `~/.codex/skills/` on Joey's Mac and linked into `~/.claude/skills/` for Claude Code. Their local `.env` files point to `http://127.0.0.1:8765/v1`, which is served by AntLing Design Lab on Spark 2 through the existing SSH tunnel. The API key values in those files are local placeholders; this setup does not use a paid image provider.
+The published `ling-ui-design` and `image-to-editable-ppt` skills from [inclusionAI/ling-cookbook](https://github.com/inclusionAI/ling-cookbook/tree/main/resources/recommended-skills) can use AntLing's local image API. Install them in your agent's skill directory and configure their local `.env` files to point to `http://127.0.0.1:8765/v1` through the SSH tunnel. Their image API key can be a local placeholder; AntLing's image routes do not use a paid image provider. These skill integrations are optional and separate from the Lab's prompt-expansion provider dropdown.
 
 The web server implements two compatibility routes:
 
@@ -31,7 +31,7 @@ For a slide, run the installed `image-to-editable-ppt` workflow with its virtual
 - Image-to-editable-PPT can run locally, but its default 512 px decomposition may limit fidelity of fine text and artwork. For a higher-resolution PPT run, set `DECOMPOSE_SIZE_FINAL=1024x1024` and `DECOMPOSE_TIMEOUT_FINAL_S=1800` in the shell that invokes its decomposition script; this unloads the other checkpoint and runs substantially longer.
 - The compatibility routes share the existing single-GPU queue, local-only host binding, and persistent `jobs/` directory. Keep the SSH tunnel connected while running skills on the Mac.
 
-The installed skills become discoverable to Codex on a new task turn. Their `.env` files and generated artifacts are not committed to this repository.
+Installed skills become discoverable to Codex on a new task turn. Their `.env` files and generated artifacts are not committed to this repository.
 
 ## Verified on Spark 2
 

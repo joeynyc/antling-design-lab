@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AntLing Design Lab</title>
-    <link rel="stylesheet" href="/static/style.css?v=9" />
-    <script src="/static/app.js?v=9" defer></script>
+    <link rel="stylesheet" href="/static/style.css?v=10" />
+    <script src="/static/app.js?v=10" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -39,7 +39,9 @@
               <label class="field-label" for="design-prompt">Prompt</label>
               <textarea id="design-prompt" class="design-prompt" minlength="5" maxlength="5000" required placeholder="A bold editorial poster with a red ceramic vase, cream background, and the exact headline ‘FRESH IDEAS’. Keep the headline clear and centered."></textarea>
               <p class="helper">Describe what you want in plain language. Quote any words that must appear exactly.</p>
-              <label class="enhance-option"><input id="enhance-prompt" type="checkbox" checked /><span><strong>Expand with Codex</strong><small>Codex on this Mac turns your request into the structured prompt Ming recommends. Uses your signed-in Codex account.</small></span></label>
+              <label class="field-label" for="prompt-provider">Prompt expansion</label>
+              <select id="prompt-provider" class="prompt-provider"><option value="none">Use my words directly</option></select>
+              <p class="helper" id="provider-note">Choose a configured model to expand your request into Ming's structured layout. Direct mode needs no API key.</p>
               <div class="section-header settings-heading"><div><span class="eyebrow">02 / SETTINGS</span><h2>Run settings</h2></div></div>
               <div class="setting-row"><div><strong>Output size</strong><span>2048 is recommended for detailed designs; 1024 is faster.</span></div><div class="segmented" role="group" aria-label="Design resolution"><button type="button" data-design-resolution="1024">1024</button><button type="button" class="selected" data-design-resolution="2048">2048</button></div></div>
               <div class="setting-row seed-row"><div><strong>Seed</strong><span>Reuse a seed to compare prompts.</span></div><input id="design-seed-input" type="number" min="0" max="4294967295" value="42" /></div>
