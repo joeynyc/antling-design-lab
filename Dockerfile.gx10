@@ -3,27 +3,22 @@
 FROM nvcr.io/nvidia/pytorch:26.08-py3
 
 RUN python -m pip install --no-cache-dir \
-    transformers==4.57.1 \
-    diffusers==0.36.0 \
-    accelerate==1.13.0 \
+    transformers==4.57.6 \
+    diffusers==0.39.0 \
+    accelerate==1.15.0 \
     peft==0.17.0 \
-    huggingface-hub==0.34.0 \
+    huggingface-hub==0.36.2 \
     tokenizers==0.22.2 \
-    safetensors==0.7.0 \
-    Pillow==10.4.0 \
-    requests==2.32.3 \
+    safetensors==0.8.0 \
     tqdm==4.67.1
 
 WORKDIR /workspace
 
-# NGC's torchao lacks NF4Tensor expected by diffusers 0.36; this checkpoint
+# NGC's torchao lacks NF4Tensor expected by diffusers; this checkpoint
 # uses BF16 and does not need torchao quantization.
 RUN python -m pip uninstall -y torchao \
     && python -c "from diffusers import AutoencoderKL"
 
-RUN python -m pip install --no-cache-dir \
-    fastapi==0.116.1 \
-    uvicorn==0.35.0 \
-    python-multipart==0.0.20 \
-    httpx==0.28.1 \
+COPY requirements-web.txt /tmp/requirements-web.txt
+RUN python -m pip install --no-cache-dir -r /tmp/requirements-web.txt \
     && python -c "import fastapi, uvicorn, multipart, httpx"

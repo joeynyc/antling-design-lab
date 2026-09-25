@@ -44,7 +44,7 @@ class SkillApiTests(unittest.TestCase):
                 patch.object(server, "create_design_job", return_value={"id": job_id}),
                 patch.object(server.runtime, "get_job", return_value={"id": job_id, "status": "done"}),
             ):
-                response = TestClient(server.app).post(
+                response = TestClient(server.app, base_url="http://127.0.0.1").post(
                     "/v1/images/generations",
                     json={
                         "model": "ming-image-0.1-design",
@@ -62,7 +62,7 @@ class SkillApiTests(unittest.TestCase):
                 patch.object(server, "JOBS_DIR", Path(directory)),
                 patch.object(server.runtime, "add_job") as add_job,
             ):
-                response = TestClient(server.app).post(
+                response = TestClient(server.app, base_url="http://127.0.0.1").post(
                     "/api/design-jobs",
                     data={
                         "prompt": '{"canvas_settings": {}, "layers": []}',
@@ -97,7 +97,7 @@ class SkillApiTests(unittest.TestCase):
                 patch.object(server, "create_job", create),
                 patch.object(server.runtime, "get_job", return_value={"id": job_id, "status": "done", "resolution": 512}),
             ):
-                response = TestClient(server.app).post(
+                response = TestClient(server.app, base_url="http://127.0.0.1").post(
                     "/v1/images/edits",
                     data={
                         "model": "ming-image-0.1-design-layer",

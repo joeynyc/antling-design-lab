@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="460" viewBox="0 0 1440 460" role="img" aria-labelledby="title desc">
+  <title id="title">AntLing Design Lab</title>
+  <desc id="desc">Generate, separate, and finish designs on one DGX Spark. Violet and teal artwork shows three overlapping image layers.</desc>
+  <defs>
+    <linearGradient id="paper" x2="1" y2="1"><stop stop-color="#f9f7ff"/><stop offset="1" stop-color="#edfaf8"/></linearGradient>
+    <linearGradient id="violet" x2="1" y2="1"><stop stop-color="#8e54ff"/><stop offset="1" stop-color="#5424cf"/></linearGradient>
+    <linearGradient id="teal" x2="0" y2="1"><stop stop-color="#81ebd9"/><stop offset="1" stop-color="#18bba6"/></linearGradient>
+  </defs>
+  <rect width="1440" height="460" rx="28" fill="url(#paper)"/>
+  <path d="M900 0h540v460H790z" fill="#eee7ff" opacity=".6"/>
+  <circle cx="1307" cy="25" r="150" fill="#a6efe3" opacity=".55"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <rect x="65" y="54" width="196" height="30" rx="15" fill="#e8defe"/>
+    <text x="82" y="74" fill="#5a2dc1" font-size="13" font-weight="700" letter-spacing="2">LOCAL IMAGE STUDIO</text>
+    <text x="60" y="183" fill="#23153f" font-size="81" font-weight="700" letter-spacing="-3">AntLing Design Lab</text>
+    <text x="65" y="241" fill="#66597a" font-size="26">From a prompt to an image you can use.</text>
+    <g font-size="18" font-weight="700" fill="#6533cf">
+      <text x="65" y="311">Generate</text><text x="187" y="311" fill="#ac9ec8">→</text>
+      <text x="226" y="311">Separate</text><text x="348" y="311" fill="#ac9ec8">→</text>
+      <text x="387" y="311">Finish</text>
+    </g>
+    <path d="M65 350h550" stroke="#dcd3ea"/>
+    <text x="65" y="391" fill="#77698b" font-size="18">Two image models. One DGX Spark.</text>
+  </g>
+  <g transform="translate(947 64)">
+    <rect x="60" y="66" width="278" height="300" rx="23" fill="#c7bbdf" opacity=".2"/>
+    <g transform="rotate(11 210 208)">
+      <rect x="61" y="53" width="258" height="284" rx="18" fill="url(#teal)"/>
+      <path d="M84 291l64-97 55 58 62-112 32 151z" fill="#d9fff5" opacity=".8"/>
+      <circle cx="257" cy="114" r="27" fill="#f1ffde"/>
+    </g>
+    <g transform="rotate(-8 148 163)">
+      <rect x="13" y="18" width="258" height="284" rx="18" fill="#fff" stroke="#ded3f3" stroke-width="2"/>
+      <rect x="31" y="36" width="222" height="204" rx="10" fill="url(#violet)"/>
+      <ellipse cx="142" cy="206" rx="67" ry="11" fill="#371c8b" opacity=".35"/>
+      <path d="M124 82h36v31c0 17 40 34 40 65 0 24-21 34-58 34s-58-10-58-34c0-31 40-48 40-65z" fill="#eefff7"/>
+      <path d="M145 82h15v31c0 17 40 34 40 65 0 24-21 34-58 34 28-13 31-36 19-62-12-24-22-41-16-68z" fill="#a0dfd1"/>
+      <path d="M35 262h115m-115 18h169" stroke="#d5c8eb" stroke-width="8" stroke-linecap="round"/>
+    </g>
+    <rect x="193" y="270" width="142" height="45" rx="13" fill="#fff" stroke="#dcd1ef"/>
+    <g stroke="#733fda" stroke-width="2" fill="none" transform="translate(207 279)">
+      <path d="M0 8l12-6 12 6-12 6zM0 14l12 6 12-6M0 20l12 6 12-6"/>
+    </g>
+    <text x="245" y="299" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#5a2dc1">Your layers</text>
+  </g>
+</svg>
