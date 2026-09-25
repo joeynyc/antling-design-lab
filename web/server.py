@@ -27,6 +27,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageChops, ImageOps, ImageStat, UnidentifiedImageError
+from web.prompting import configured_providers, expand_prompt
 
 WEB_DIR = Path(__file__).resolve().parent
 UPSTREAM_DIR = Path(os.environ.get("MING_UPSTREAM_DIR", "/upstream"))
@@ -793,6 +794,24 @@ async def create_job(
     return public_job(job)
 
 
+@app.get("/api/prompt-providers")
+def prompt_providers():
+    return {"providers": configured_providers()}
+
+
+@app.post("/api/prompts/expand")
+def expand_design_prompt(payload: dict):
+    prompt = payload.get("prompt")
+    provider = payload.get("provider")
+    if not isinstance(prompt, str) or not isinstance(provider, str):
+        raise HTTPException(422, "A prompt and configured provider are required")
+    try:
+        structured, model = expand_prompt(provider, prompt.strip())
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"prompt": json.dumps(structured, ensure_ascii=False), "provider": provider, "model": model}
+
+
 @app.post("/api/design-jobs", status_code=202)
 def create_design_job(
     prompt: str = Form(...),
@@ -804,21 +823,21 @@ def create_design_job(
     rewrite_seconds: float | None = Form(None),
 ):
     prompt = prompt.strip()
-    if enhancement not in ("none", "codex"):
+    if enhancement not in ("none", "codex", "openai", "anthropic", "zai", "deepseek", "compatible"):
         raise HTTPException(422, "Unknown prompt enhancement")
-    if enhancement == "codex" and source_prompt is None:
-        raise HTTPException(422, "Original prompt is required for Codex enhancement")
+    if enhancement != "none" and source_prompt is None:
+        raise HTTPException(422, "Original prompt is required for enhancement")
     if rewrite_seconds is not None and (
-        enhancement != "codex"
+        enhancement == "none"
         or not math.isfinite(rewrite_seconds)
         or not 0 <= rewrite_seconds <= 190
     ):
-        raise HTTPException(422, "Codex timing must be between 0 and 190 seconds")
+        raise HTTPException(422, "Prompt expansion timing must be between 0 and 190 seconds")
     if source_prompt is not None:
         source_prompt = source_prompt.strip()
         if not 5 <= len(source_prompt) <= 5000:
             raise HTTPException(422, "Original prompt must be 5–5000 characters")
-        if enhancement != "codex":
+        if enhancement == "none":
             raise HTTPException(422, "Enhanced prompt must identify its source")
     if not 5 <= len(prompt) <= 5000:
         raise HTTPException(422, "Describe the design in 5–5000 characters")

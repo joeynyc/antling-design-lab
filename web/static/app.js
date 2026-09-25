@@ -286,7 +286,7 @@ function renderResults() {
       thumbnail.src = job.design_url;
       thumbnail.alt = "Generated design thumbnail";
       card.append(thumbnail, makeElement("p", "", job.design_prompt));
-      if (job.enhancement === "codex") {
+      if (job.enhancement && job.enhancement !== "none") {
         const link = makeElement("a", "", "View structured prompt ↗");
         link.href = `/api/jobs/${job.id}/assets/manifest.json`;
         link.target = "_blank";
@@ -351,7 +351,7 @@ function renderResults() {
 
 function timingBreakdown(job) {
   const parts = [];
-  if (job.rewrite_seconds !== undefined) parts.push(`Codex ${secondsLabel(job.rewrite_seconds)}`);
+  if (job.rewrite_seconds !== undefined) parts.push(`Prompt expansion ${secondsLabel(job.rewrite_seconds)}`);
   if (job.started_at && job.created_at) {
     const queued = (Date.parse(job.started_at) - Date.parse(job.created_at)) / 1000;
     if (queued >= 1) parts.push(`Queue ${secondsLabel(queued)}`);
@@ -379,7 +379,7 @@ function renderJob() {
   }
   card.classList.add(job.status);
   const names = {
-    queued: "Queued for Spark 2",
+    queued: "Queued for Spark",
     loading: "Loading model",
     running: state.mode === "design" ? "Generating design" : "Generating layers",
     saving: state.mode === "design" ? "Saving design" : "Saving PNGs",
@@ -427,7 +427,7 @@ function showError(message, stage = "Check your input") {
 
 function showSubmitError(error) {
   if (error instanceof TypeError) {
-    showError("Could not reach Spark 2. The Mac tunnel may have disconnected. Your input is still here; try again.", "Connection lost");
+    showError("Could not reach the Spark. Your SSH tunnel may have disconnected. Your input is still here; try again.", "Connection lost");
   } else {
     showError(error.message);
   }
@@ -521,31 +521,33 @@ async function submitDesignJob(event) {
   try {
     const labResponse = await fetch("/api/health", {cache: "no-store"});
     if (!labResponse.ok) throw new Error("The Lab server is not ready. Try again shortly.");
-    if (byId("enhance-prompt").checked) {
+    const provider = byId("prompt-provider").value;
+    if (provider !== "none") {
       const rewriteStarted = performance.now();
-      byId("job-stage").textContent = "Expanding prompt with Codex";
-      byId("job-message").textContent = "Codex is describing the layout, colors, and exact text before Ming draws it.";
+      const providerName = byId("prompt-provider").selectedOptions[0].textContent;
+      byId("job-stage").textContent = `Expanding prompt with ${providerName}`;
+      byId("job-message").textContent = "Describing layout, colors, and exact text before Ming draws it.";
       byId("job-clock").textContent = "";
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 190000);
       let rewritten;
       try {
-        const rewriteResponse = await fetch("http://127.0.0.1:8766/rewrite", {
+        const rewriteResponse = await fetch(provider === "codex" ? "http://127.0.0.1:8766/rewrite" : "/api/prompts/expand", {
           method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({prompt}), signal: controller.signal,
+          body: JSON.stringify({prompt, provider}), signal: controller.signal,
         });
         rewritten = await rewriteResponse.json();
-        if (!rewriteResponse.ok) throw new Error(rewritten.error || "Codex could not expand this prompt.");
+        if (!rewriteResponse.ok) throw new Error(rewritten.error || rewritten.detail || "The model could not expand this prompt.");
       } catch (error) {
-        if (error.name === "AbortError") throw new Error("Codex took too long to expand the prompt.");
-        if (error instanceof TypeError) throw new Error("The Codex helper on this Mac is not running. Start scripts/prompt_rewriter_bridge.py or uncheck Expand with Codex.");
+        if (error.name === "AbortError") throw new Error("Prompt expansion took too long. Try again or choose direct mode.");
+        if (error instanceof TypeError && provider === "codex") throw new Error("The Codex helper on this Mac is unavailable. Start scripts/prompt_rewriter_bridge.py or choose direct mode.");
         throw error;
       } finally {
         clearTimeout(timeout);
       }
       data.append("prompt", rewritten.prompt);
       data.append("source_prompt", prompt);
-      data.append("enhancement", "codex");
+      data.append("enhancement", provider);
       data.append("rewrite_seconds", String(((performance.now() - rewriteStarted) / 1000).toFixed(2)));
     } else {
       data.append("prompt", prompt);
@@ -563,6 +565,46 @@ async function submitDesignJob(event) {
     byId("generate-design-button").disabled = false;
     showSubmitError(error);
   }
+}
+
+async function loadPromptProviders() {
+  const select = byId("prompt-provider");
+  try {
+    const response = await fetch("/api/prompt-providers", {cache: "no-store"});
+    if (response.ok) {
+      const body = await response.json();
+      for (const provider of body.providers || []) {
+        const option = new Option(`${provider.name} · ${provider.model}`, provider.id);
+        select.add(option);
+      }
+    }
+  } catch {
+    // Direct prompting works even if provider discovery is unavailable.
+  }
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1500);
+    let response;
+    try {
+      response = await fetch("http://127.0.0.1:8766/health", {signal: controller.signal});
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (response.ok) {
+      const bridge = await response.json();
+      select.add(new Option(`Codex CLI on this Mac · ${bridge.model}`, "codex"));
+    }
+  } catch {
+    // The optional Mac bridge is absent on ordinary installs.
+  }
+  select.addEventListener("change", () => {
+    byId("provider-note").textContent = select.value === "none"
+      ? "Direct mode sends your words to Ming unchanged and needs no API key."
+      : select.value === "codex"
+        ? "Uses the signed-in Codex CLI on this Mac; no API key is stored in the Lab."
+        : "Your prompt goes to the selected provider through the Spark. Its API key stays on the Spark.";
+  });
+  select.dispatchEvent(new Event("change"));
 }
 
 function setMode(mode) {
@@ -725,6 +767,7 @@ function attachEvents() {
 renderPlan();
 renderResolutionNote();
 attachEvents();
+loadPromptProviders();
 updateHealth();
 restoreRecentJob();
 new ResizeObserver(() => {

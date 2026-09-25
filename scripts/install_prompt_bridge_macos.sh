@@ -3,13 +3,13 @@ set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 agent_dir="$HOME/Library/LaunchAgents"
-agent_path="$agent_dir/com.joey.ming-prompt-rewriter.plist"
+agent_path="$agent_dir/ai.antling.prompt-rewriter.plist"
 mkdir -p "$agent_dir" "$project_root/private"
 cat > "$agent_path" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.joey.ming-prompt-rewriter</string>
+  <key>Label</key><string>ai.antling.prompt-rewriter</string>
   <key>ProgramArguments</key><array>
     <string>/usr/bin/python3</string>
     <string>$project_root/scripts/prompt_rewriter_bridge.py</string>
