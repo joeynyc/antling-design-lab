@@ -4,6 +4,8 @@
 
 A local image studio for NVIDIA DGX Spark / GX10. Generate a design, separate it into transparent layers, and finish a graphic with editable text—all in your browser.
 
+This is a single-user preview. Keep the server on loopback and review the [security notes](SECURITY.md) before installing it.
+
 - **Generate:** turn a prompt into a 1024 or 2048 px square image.
 - **Separate:** describe the elements you want as individual transparent PNGs.
 - **Finish:** arrange layers, clean edges, add text, and export a social graphic.
