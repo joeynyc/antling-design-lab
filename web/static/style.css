@@ -177,8 +177,9 @@ h1, h2, h3, p { margin-top: 0; }
 .job-clock { color: var(--accent); font-size: 10px; display: block; margin-top: 8px; font-variant-numeric: tabular-nums; }
 .job-breakdown { color: var(--muted); font-size: 10px; line-height: 1.45; display: block; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .job-breakdown:empty { display: none; }
-.result-actions { display: flex; gap: 8px; margin: 0 14px 10px; }
-.result-actions > * { flex: 1; text-align: center; }
+.result-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 14px 10px; }
+.result-actions > * { text-align: center; }
+.result-actions #finish-layers { grid-column: 1 / -1; color: var(--accent); text-decoration: none; }
 .source-export { margin: 0 14px 12px; padding: 10px; border: 1px solid var(--stroke-soft); border-radius: 8px; background: #f3effb; }
 .source-export a { display: block; text-align: center; text-decoration: none; color: var(--accent); }
 .source-export p { color: var(--muted); font-size: 10px; line-height: 1.4; margin: 7px 1px 0; }

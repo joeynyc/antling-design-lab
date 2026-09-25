@@ -10,7 +10,7 @@ The [local AI website demo](demos/local-ai-website/README.md) turns a 2048px Des
 
 ## Project status
 
-The [official six-layer sample](docs/gx10-smoke.md) completed on a DGX Spark GX10. The [local web tool](docs/web-tool.md) runs both checkpoints on Spark 2 in one workflow. The model weights and generated jobs stay on the device and are ignored by Git.
+The [official six-layer sample](docs/gx10-smoke.md) completed on a DGX Spark GX10. The [local web tool](docs/web-tool.md) runs both checkpoints on Spark 2 in one workflow. Its Finish editor turns saved designs and layers into X-size graphics with editable text, project persistence, edge cleanup, and PNG export without another model run. The model weights and generated jobs stay on the device and are ignored by Git.
 
 A structured 2048 px landing-page test made the main headline and button much clearer than a one-sentence 1024 px run, though Ming still invented some small labels. More design-quality testing is needed.
 
